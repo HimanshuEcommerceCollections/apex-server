@@ -1,0 +1,28 @@
+# Local Postgres for apex-server development.
+#   docker compose up -d        # start Postgres on localhost:5432
+#   npm run prisma:migrate      # create + apply the initial migration
+#   npm run prisma:seed         # load catalog / pricing / zips
+#   npm run dev
+# Matches the default DATABASE_URL in .env.example
+# (postgresql://postgres:postgres@localhost:5432/apex?schema=public).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: apex-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: apex
+    ports:
+      - "5432:5432"
+    volumes:
+      - apex_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d apex"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  apex_pgdata:

@@ -1,0 +1,37 @@
+// Prisma is the single source of truth for DB enums; re-export them here so app
+// code imports enums ONLY from `src/enums` (never directly from @prisma/client).
+export {
+  Brand,
+  PricingMode,
+  ServiceStatus,
+  CategoryStatus,
+  ConfigInputType,
+  ConfigApplies,
+  ConfigStatus,
+  BookingStatus,
+  BookingSource,
+  ContactMethod,
+  QuoteStatus,
+  QuoteSource,
+  PMBundle,
+  WaitlistSource,
+  WaitlistStatus,
+  ProApplicationStatus,
+  FormKind,
+  Role,
+  AuthProvider,
+  UserStatus,
+  TokenPurpose,
+  BookingAssignmentStatus,
+  CrewAssignmentStatus,
+  PayoutStatus,
+  PaymentStatus,
+  MembershipInterval,
+  MembershipStatus,
+  StripeEventStatus,
+  CatalogVersionStatus,
+  GeoStatus,
+  CoverageEffect,
+} from "@prisma/client";
+
+export * from "./app.enums";

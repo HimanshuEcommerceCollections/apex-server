@@ -1,0 +1,891 @@
+// Prisma schema for the Apex Total Home Services booking platform.
+//
+// Conventions (docs/architecture/02-database.md):
+//   - Money is stored in INTEGER MINOR units (cents). No floats, ever.
+//   - All ids are UUID strings. All tables carry createdAt/updatedAt, except
+//     append-only snapshot/log tables (BookingConfiguration, FormSubmissionLog,
+//     AdminAuditLog), which carry createdAt only.
+//   - Enums live here as the single source of truth and are re-exported to the
+//     app via src/enums.
+//
+// This file merges the MVP catalog/booking models (docs 02) with the platform
+// evolution: accounts, RBAC, professionals & crews, Stripe payments, memberships,
+// admin-controlled catalog versioning, and audit (docs 07).
+//
+// Actor-stamp columns (assignedByUserId, approvedByUserId, paidByUserId,
+// createdByUserId, publishedByUserId, quotedByUserId, actorUserId,
+// leadProUserId, promotedUserId) are stored as plain String soft-references to
+// User.id rather than FK relations. Rationale: they are audit stamps, not
+// ownership edges; soft refs avoid a dozen back-relations on User, keep the
+// audit trail intact through GDPR erasure, and are validated at the service
+// layer. Ownership/integrity edges ARE modeled as real relations below.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum Brand {
+  APEX
+}
+
+enum PricingMode {
+  PRICED
+  FROM
+  QUOTE
+}
+
+enum ServiceStatus {
+  DRAFT
+  ACTIVE
+  COMING_SOON
+  INACTIVE
+}
+
+enum CategoryStatus {
+  ACTIVE
+  COMING_SOON
+  INACTIVE
+}
+
+enum ConfigInputType {
+  SELECT
+  MULTISELECT
+  QUANTITY
+  TOGGLE
+  TEXTAREA
+}
+
+enum ConfigApplies {
+  FLAT
+  PER_UNIT
+}
+
+enum ConfigStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum BookingStatus {
+  DRAFT
+  PENDING
+  AWAITING_PAYMENT // 07: created, awaiting the customer's payment
+  PAID // 07: payment captured
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingSource {
+  WEB
+  API
+  SUBSCRIPTION // 07: auto-created fulfilment visit from a membership cycle
+}
+
+enum ContactMethod {
+  EMAIL
+  PHONE
+  SMS
+}
+
+enum QuoteStatus {
+  NEW
+  REVIEWING
+  SENT
+  WON
+  LOST
+}
+
+enum QuoteSource {
+  BOOKING_FLOW
+  PM_FORM
+}
+
+enum PMBundle {
+  TURNOVER
+  LISTING_PREP
+}
+
+enum WaitlistSource {
+  SERVICE_AREA_MISS
+  SERVICE_AREA_PAGE
+}
+
+enum WaitlistStatus {
+  ACTIVE
+  NOTIFIED
+  CONVERTED
+}
+
+enum ProApplicationStatus {
+  RECEIVED
+  REVIEWING
+  CONTACTED
+}
+
+enum FormKind {
+  BOOKING
+  QUOTE
+  PM_REQUEST
+  PRO_APPLICATION
+  WAITLIST
+}
+
+// --- 07: accounts, RBAC, professionals ------------------------------------
+
+enum Role {
+  CUSTOMER
+  PROFESSIONAL
+  COORDINATOR
+  ADMIN
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE // pre-placed for a later additive OAuth bolt-on
+}
+
+enum UserStatus {
+  INVITED // created (staff/pro), awaiting password via invite
+  ACTIVE
+  SUSPENDED
+}
+
+enum TokenPurpose {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+  STAFF_INVITE
+  PRO_INVITE
+}
+
+enum BookingAssignmentStatus {
+  ASSIGNED
+  ACCEPTED
+  DECLINED
+  COMPLETED
+}
+
+enum CrewAssignmentStatus {
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+}
+
+enum PayoutStatus {
+  UNPAID
+  APPROVED
+  PAID
+}
+
+// --- 07: payments, memberships, catalog versioning ------------------------
+
+enum PaymentStatus {
+  REQUIRES_PAYMENT
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum MembershipInterval {
+  WEEK
+  MONTH
+}
+
+enum MembershipStatus {
+  INCOMPLETE
+  ACTIVE
+  PAST_DUE
+  UNPAID
+  PAUSED
+  CANCELED
+}
+
+enum StripeEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+enum CatalogVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// ===========================================================================
+// Catalog (seed / admin-published)
+// ===========================================================================
+
+model ServiceCategory {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  slug        String         @unique
+  description String?
+  sortOrder   Int            @default(0)
+  status      CategoryStatus @default(ACTIVE)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  services Service[]
+
+  @@index([status, sortOrder])
+}
+
+model Service {
+  id                  String        @id @default(uuid())
+  categoryId          String
+  name                String        @unique
+  slug                String        @unique
+  summary             String?
+  description         String?
+  pricingMode         PricingMode
+  pricingRef          String
+  basePrice           Int // cents; engine base. 0 for every MVP service.
+  fromPrice           Int? // cents; DISPLAY-ONLY "From $X" band. Never summed.
+  currency            String        @default("USD")
+  status              ServiceStatus @default(DRAFT)
+  badges              String[]      @default([])
+  sortOrder           Int           @default(0)
+  claimsBlock         String?
+  isRecurringEligible Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  category        ServiceCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  configGroups    ServiceConfigGroup[]
+  pricingRules    ServicePricingRule[]
+  bookings        Booking[]
+  configurations  BookingConfiguration[]
+  quoteRequests   QuoteRequest[]
+  membershipPlans MembershipPlan[]
+  memberships     Membership[]
+  serviceAreas    ServiceArea[]
+  zipCoverage     ServiceZipCoverage[]
+
+  @@index([categoryId, sortOrder])
+  @@index([status])
+}
+
+model ServiceConfigGroup {
+  id           String          @id @default(uuid())
+  serviceId    String
+  key          String // == pricing modifier id (verbatim)
+  label        String
+  inputType    ConfigInputType
+  uiHint       String?
+  applies      ConfigApplies   @default(FLAT)
+  isRequired   Boolean         @default(false)
+  sortOrder    Int             @default(0)
+  status       ConfigStatus    @default(ACTIVE)
+  priceDelta   Int?
+  selectMin    Int?
+  selectMax    Int?
+  quantityMin  Int?
+  quantityMax  Int?
+  quantityStep Int?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  service Service               @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  options ServiceConfigOption[]
+
+  @@unique([serviceId, key])
+  @@index([serviceId, sortOrder])
+}
+
+model ServiceConfigOption {
+  id         String       @id @default(uuid())
+  groupId    String
+  key        String // == pricing modifier option id (verbatim)
+  label      String
+  sublabel   String?
+  priceDelta Int          @default(0) // cents; >= 0 in MVP (zod-enforced; recompute is the guard)
+  sortOrder  Int          @default(0)
+  status     ConfigStatus @default(ACTIVE)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  group ServiceConfigGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, key])
+  @@index([groupId, sortOrder])
+}
+
+model ServicePricingRule {
+  id        String       @id @default(uuid())
+  serviceId String
+  key       String
+  label     String
+  trigger   Json
+  effect    Json
+  sortOrder Int          @default(0)
+  status    ConfigStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, key])
+  @@index([serviceId, sortOrder])
+}
+
+// ===========================================================================
+// Booking (the Core Flow)
+// ===========================================================================
+
+model Booking {
+  id              String        @id @default(uuid())
+  reference       String        @unique // APX-YYYY-NNNN
+  clientRequestId String?       @unique // wire request_id; idempotent double-submit
+  serviceId       String
+  customerId      String // 07: accounts required to book
+  membershipId    String? // 07: set for subscription-generated visits
+  status          BookingStatus @default(PENDING)
+  quoteRequest    Boolean       @default(false) // derived from service.pricingMode == QUOTE
+  brand           Brand         @default(APEX)
+  source          BookingSource @default(WEB)
+
+  // Contact snapshot (kept even though customerId links the account)
+  contactName            String
+  contactEmail           String
+  contactPhone           String?
+  contactPreferredMethod ContactMethod @default(EMAIL)
+  consentMarketing       Boolean       @default(false)
+
+  // Address snapshot
+  addressStreet String
+  addressCity   String
+  addressState  String @default("NC")
+  addressZip    String
+
+  notes               String?
+  schedulePreferences Json?
+  scheduledAt         DateTime? // 07: coordinator-set service datetime; drives the 24h refund window + pro queue
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  service         Service               @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  customer        User                  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  membership      Membership?           @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  configuration   BookingConfiguration?
+  quote           QuoteRequest?
+  payments        Payment[]
+  assignments     BookingAssignment[]
+  crewAssignments CrewAssignment[]
+
+  @@index([serviceId])
+  @@index([customerId])
+  @@index([status])
+  @@index([contactEmail])
+  @@index([scheduledAt])
+  @@index([createdAt])
+}
+
+model BookingConfiguration {
+  id             String   @id @default(uuid())
+  bookingId      String   @unique
+  serviceId      String
+  selections     Json
+  quantity       Int      @default(1)
+  description    String?
+  priceTotal     Int? // NULL for QUOTE, never 0
+  priceSubtotal  Int?
+  lineItems      Json?
+  pricingVersion String?
+  currency       String   @default("USD")
+  isEstimate     Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@index([serviceId])
+}
+
+// ===========================================================================
+// Quotes and B2B
+// ===========================================================================
+
+model QuoteRequest {
+  id             String      @id @default(uuid())
+  bookingId      String?     @unique
+  serviceId      String?
+  description    String
+  status         QuoteStatus @default(NEW)
+  source         QuoteSource
+  contactName    String
+  contactEmail   String
+  contactPhone   String?
+  quotedAmount   Int? // 07: coordinator-set final price for FROM/QUOTE (cents)
+  quotedByUserId String? // 07: soft ref to the staff User who set it
+  quotedAt       DateTime?
+  currency       String      @default("USD")
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  booking   Booking?   @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  service   Service?   @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  pmRequest PMRequest?
+
+  @@index([status])
+  @@index([source, createdAt])
+}
+
+model PMRequest {
+  id             String   @id @default(uuid())
+  quoteRequestId String   @unique
+  company        String?
+  unitsEst       Int
+  bundle         PMBundle
+  scopeNotes     String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  quoteRequest QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+}
+
+// ===========================================================================
+// Waitlist, pros, service area, counters, logs
+// ===========================================================================
+
+model WaitlistSignup {
+  id        String         @id @default(uuid())
+  brand     Brand          @default(APEX)
+  email     String
+  zip       String
+  source    WaitlistSource
+  status    WaitlistStatus @default(ACTIVE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([email, zip])
+  @@index([zip])
+  @@index([status])
+}
+
+model ProApplication {
+  id               String               @id @default(uuid())
+  name             String
+  email            String
+  phone            String?
+  zip              String
+  trades           String[]
+  acknowledgements Json
+  status           ProApplicationStatus @default(RECEIVED)
+  notes            String?
+  promotedUserId   String? // 07: soft ref to the PROFESSIONAL User created on approval
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  professionalProfile ProfessionalProfile?
+
+  @@index([email])
+  @@index([status])
+}
+
+// Normalized geography + service availability (docs/architecture/08). Replaces
+// the flat ServiceAreaZip allowlist. Availability = area GRANT + per-ZIP OVERRIDE.
+enum GeoStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CoverageEffect {
+  INCLUDE
+  EXCLUDE
+}
+
+/// A service area (e.g. "Dallas", "Wake County"). Soft-deletable; name/slug are
+/// unique among non-deleted rows (partial unique index added via raw SQL migration).
+model Area {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String
+  status    GeoStatus @default(ACTIVE)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  zipCodes     ZipCode[]
+  serviceAreas ServiceArea[]
+
+  @@index([status, deletedAt])
+}
+
+/// A ZIP code belonging to exactly one area. `zipCode` is unique among non-deleted
+/// rows (one active ZIP -> one area) so booking resolution is deterministic.
+model ZipCode {
+  id        String    @id @default(uuid())
+  areaId    String
+  zipCode   String
+  city      String?
+  state     String?
+  status    GeoStatus @default(ACTIVE)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Restrict: an area with ZIPs is retired via status/soft-delete, never hard-deleted.
+  area     Area                 @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  coverage ServiceZipCoverage[]
+
+  @@index([areaId, status, deletedAt])
+  @@index([zipCode])
+}
+
+/// Area-level GRANT: the service covers the whole area (every ZIP) by default.
+model ServiceArea {
+  id        String   @id @default(uuid())
+  serviceId String
+  areaId    String
+  createdAt DateTime @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  area    Area    @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, areaId])
+  @@index([areaId])
+}
+
+/// Per-ZIP OVERRIDE that beats the area grant (most-specific-wins).
+/// INCLUDE = available even if the area isn't granted; EXCLUDE = carved out of a granted area.
+model ServiceZipCoverage {
+  id        String         @id @default(uuid())
+  serviceId String
+  zipCodeId String
+  effect    CoverageEffect
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  zipCode ZipCode @relation(fields: [zipCodeId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, zipCodeId])
+  @@index([zipCodeId])
+}
+
+model BookingReferenceCounter {
+  id        String   @id @default(uuid())
+  brandCode String
+  year      Int
+  counter   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([brandCode, year])
+}
+
+model FormSubmissionLog {
+  id        String   @id @default(uuid())
+  kind      FormKind
+  payload   Json
+  entityId  String?
+  createdAt DateTime @default(now())
+
+  @@index([kind, createdAt])
+}
+
+// ===========================================================================
+// 07: Accounts & auth
+// ===========================================================================
+
+model User {
+  id               String       @id @default(uuid())
+  email            String       @unique
+  passwordHash     String? // null while INVITED (staff/pro) or for OAuth-only
+  authProvider     AuthProvider @default(LOCAL)
+  role             Role         @default(CUSTOMER)
+  status           UserStatus   @default(ACTIVE)
+  emailVerifiedAt  DateTime?
+  failedLoginCount Int          @default(0)
+  lockedUntil      DateTime?
+  tokenVersion     Int          @default(0) // bumped to revoke all live access tokens
+  stripeCustomerId String?      @unique
+  name             String
+  phone            String?
+  mfaSecret        String? // AES-256-GCM encrypted TOTP secret (staff)
+  mfaEnabledAt     DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  bookings            Booking[]
+  payments            Payment[]
+  memberships         Membership[]
+  refreshTokens       RefreshToken[]
+  verificationTokens  VerificationToken[]
+  professionalProfile ProfessionalProfile?
+  assignments         BookingAssignment[] // as the assigned pro
+  crewMemberships     CrewMember[] // as a crew member
+
+  @@index([role, status])
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid())
+  userId       String
+  tokenHash    String    @unique // SHA-256 of the opaque token
+  familyId     String // rotation family; reuse-detection revokes the whole family
+  replacedById String?   @unique
+  ip           String?
+  userAgent    String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+model VerificationToken {
+  id         String       @id @default(uuid())
+  userId     String
+  purpose    TokenPurpose
+  tokenHash  String       @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+}
+
+// ===========================================================================
+// 07: Professionals, crews, dispatch, payroll
+// ===========================================================================
+
+model ProfessionalProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  displayName   String
+  phone         String?
+  trades        String[] // service slugs; validated against Service.slug at the service layer
+  serviceZips   String[]
+  active        Boolean  @default(true)
+  applicationId String?  @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application ProApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+}
+
+model Crew {
+  id              String   @id @default(uuid())
+  name            String
+  leadProUserId   String? // soft ref; must be one of the members (service-layer check)
+  active          Boolean  @default(true)
+  note            String?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  members     CrewMember[]
+  assignments CrewAssignment[]
+
+  @@index([active])
+}
+
+model CrewMember {
+  id        String   @id @default(uuid())
+  crewId    String
+  proUserId String
+  addedAt   DateTime @default(now())
+
+  crew Crew @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  pro  User @relation(fields: [proUserId], references: [id], onDelete: Restrict)
+
+  @@unique([crewId, proUserId])
+}
+
+model CrewAssignment {
+  id               String               @id @default(uuid())
+  crewId           String
+  bookingId        String
+  status           CrewAssignmentStatus @default(ASSIGNED)
+  assignedByUserId String
+  assignedAt       DateTime             @default(now())
+  note             String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  crew        Crew                @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  booking     Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  assignments BookingAssignment[] // per-pro rows materialized from this crew assignment
+
+  @@unique([bookingId, crewId])
+}
+
+model BookingAssignment {
+  id               String                  @id @default(uuid())
+  bookingId        String
+  proUserId        String
+  crewAssignmentId String? // set when materialized from a crew; null for a direct individual assignment
+  status           BookingAssignmentStatus @default(ASSIGNED)
+  assignedByUserId String
+  assignedAt       DateTime                @default(now())
+  respondedAt      DateTime?
+  note             String?
+
+  // Off-platform payroll trail (07 decision #14)
+  approvedByUserId String?
+  approvedAt       DateTime?
+  payoutStatus     PayoutStatus @default(UNPAID)
+  payoutAmount     Int? // cents; the agreed pay, entered manually
+  paidByUserId     String?
+  paidAt           DateTime?
+  payrollNote      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking        Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  pro            User            @relation(fields: [proUserId], references: [id], onDelete: Restrict)
+  crewAssignment CrewAssignment? @relation(fields: [crewAssignmentId], references: [id], onDelete: SetNull)
+
+  @@unique([bookingId, proUserId])
+  @@index([proUserId, status])
+  @@index([payoutStatus, paidAt])
+}
+
+// ===========================================================================
+// 07: Payments (Stripe) & memberships
+// ===========================================================================
+
+model Payment {
+  id                    String        @id @default(uuid())
+  bookingId             String? // NOT unique -> 1:N (re-pay after failure, partials)
+  userId                String
+  membershipId          String?
+  stripeInvoiceId       String?
+  amount                Int // cents
+  currency              String        @default("USD")
+  status                PaymentStatus @default(REQUIRES_PAYMENT)
+  stripePaymentIntentId String?       @unique
+  stripeChargeId        String?
+  refundedAmount        Int           @default(0)
+  idempotencyKey        String        @unique
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  booking    Booking?    @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  membership Membership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([userId])
+  @@index([membershipId])
+  @@index([status])
+}
+
+model MembershipPlan {
+  id                  String             @id @default(uuid())
+  key                 String             @unique
+  name                String
+  description         String?
+  serviceId           String
+  interval            MembershipInterval
+  intervalCount       Int                @default(1)
+  stripeProductId     String
+  stripeAnchorPriceId String // $0 cadence anchor; real amount is a per-cycle invoice item
+  active              Boolean            @default(true)
+  sortOrder           Int                @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  service     Service      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  memberships Membership[]
+
+  @@index([active, sortOrder])
+}
+
+model Membership {
+  id                   String           @id @default(uuid())
+  userId               String
+  planId               String
+  serviceId            String
+  status               MembershipStatus @default(INCOMPLETE)
+  stripeSubscriptionId String           @unique
+  configuration        Json // selections used to recompute the price each cycle
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean          @default(false)
+  pausedUntil          DateTime?
+  lastAmount           Int? // last recomputed amount (cents); drives the change-notice
+  currency             String           @default("USD")
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan     MembershipPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  service  Service        @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  visits   Booking[]
+  payments Payment[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ===========================================================================
+// 07: Stripe events, catalog versions, audit
+// ===========================================================================
+
+model StripeEvent {
+  id          String            @id // the Stripe event id
+  type        String
+  status      StripeEventStatus @default(RECEIVED)
+  payload     Json?
+  error       String?
+  processedAt DateTime?
+  createdAt   DateTime          @default(now())
+
+  @@index([type, createdAt])
+}
+
+model CatalogVersion {
+  id                String               @id @default(uuid())
+  brand             Brand                @default(APEX)
+  version           String               @unique // e.g. "apex-pricing.v2"
+  status            CatalogVersionStatus @default(DRAFT)
+  snapshot          Json // full catalog + pricing document
+  note              String?
+  createdByUserId   String
+  publishedByUserId String?
+  publishedAt       DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  // A partial unique index enforcing exactly one PUBLISHED row per brand is
+  // added via raw SQL in the migration; publish also takes a pg_advisory_xact_lock.
+  @@index([brand, status])
+}
+
+model AdminAuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String? // null for system/webhook-driven transitions
+  action      String
+  entityType  String
+  entityId    String?
+  before      Json?
+  after       Json?
+  ip          String?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt])
+}
