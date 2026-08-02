@@ -17,12 +17,12 @@ export class AreasController {
   };
 
   create = async (req: Request, res: Response) => {
-    const { name } = req.body as { name: string };
-    sendSuccess(res, await areasService.create(name), "Area created", HttpStatus.CREATED);
+    const { name, duration } = req.body as { name: string; duration?: string };
+    sendSuccess(res, await areasService.create(name, duration), "Area created", HttpStatus.CREATED);
   };
 
   update = async (req: Request, res: Response) => {
-    const changes = req.body as { name?: string; status?: "ACTIVE" | "INACTIVE" };
+    const changes = req.body as { name?: string; status?: "ACTIVE" | "INACTIVE"; duration?: string | null };
     sendSuccess(res, await areasService.update(req.params.id, changes), "Area updated");
   };
 

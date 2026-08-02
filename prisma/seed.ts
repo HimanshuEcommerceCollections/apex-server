@@ -162,7 +162,7 @@ async function seedGeography(): Promise<Map<string, string>> {
     let area = await prisma.area.findFirst({ where: { slug: a.slug, deletedAt: null } });
     area = area
       ? await prisma.area.update({ where: { id: area.id }, data: { name: a.name, status: GeoStatus.ACTIVE } })
-      : await prisma.area.create({ data: { name: a.name, slug: a.slug, status: GeoStatus.ACTIVE } });
+      : await prisma.area.create({ data: { name: a.name, slug: a.slug, duration: a.duration ?? null, status: GeoStatus.ACTIVE } });
     areaIds.set(a.slug, area.id);
 
     for (const z of a.zips) {

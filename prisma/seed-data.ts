@@ -359,6 +359,7 @@ export const SERVICES: SeedService[] = [
 export interface SeedArea {
   slug: string;
   name: string;
+  duration?: string; // response-time label shown on coverage (admin-editable)
   zips: { zipCode: string; city: string; state: string }[];
 }
 
@@ -366,6 +367,7 @@ export const AREAS: SeedArea[] = [
   {
     slug: "wake-county",
     name: "Wake County",
+    duration: "Same day",
     zips: [
       { zipCode: "27502", city: "Apex", state: "NC" },
       { zipCode: "27523", city: "Apex", state: "NC" },

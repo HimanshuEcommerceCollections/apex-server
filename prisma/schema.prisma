@@ -514,6 +514,7 @@ model Area {
   id        String    @id @default(uuid())
   name      String
   slug      String
+  duration  String? // admin-controlled response-time label for coverage (e.g. "15 MIN")
   status    GeoStatus @default(ACTIVE)
   deletedAt DateTime?
   createdAt DateTime  @default(now())
