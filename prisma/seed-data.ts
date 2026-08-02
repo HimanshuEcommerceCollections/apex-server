@@ -76,6 +76,22 @@ export const MEMBERSHIP_PLANS: SeedMembershipPlan[] = [
   { key: "power-washing", name: "Power Washing", serviceSlug: "power-washing", interval: "MONTH", intervalCount: 3, fromPrice: 7900 },
 ];
 
+// Display labels for the pricing Compare table (admin-editable). recurringDiscount
+// null renders an em-dash.
+export const COMPARE_LABELS: Record<string, { typicalDuration: string; recurringDiscount: string | null }> = {
+  "cleaning": { typicalDuration: "2–3 hrs", recurringDiscount: "up to 15%" },
+  "lawn-care": { typicalDuration: "30–60 min", recurringDiscount: "up to 15%" },
+  "power-washing": { typicalDuration: "2–4 hrs", recurringDiscount: null },
+  "painting": { typicalDuration: "1–3 days", recurringDiscount: null },
+  "junk-removal": { typicalDuration: "1–2 hrs", recurringDiscount: null },
+  "pool": { typicalDuration: "45–60 min", recurringDiscount: "up to 10%" },
+  "pest-control": { typicalDuration: "~45 min", recurringDiscount: "up to 10%" },
+  "home-security": { typicalDuration: "Consultation", recurringDiscount: null },
+  "smart-home": { typicalDuration: "1–4 hrs", recurringDiscount: "15% (3+)" },
+  "handyman": { typicalDuration: "Per block", recurringDiscount: null },
+  "tree-stump": { typicalDuration: "Varies", recurringDiscount: null },
+};
+
 const bedroomsOptions: SeedOption[] = [1, 2, 3, 4, 5].map((n) => ({
   key: String(n),
   label: `${n} bedroom${n > 1 ? "s" : ""}`,

@@ -30,6 +30,8 @@ export interface ServiceEditView {
   basePrice: number;
   fromPrice: number | null;
   currency: string;
+  typicalDuration: string | null;
+  recurringDiscount: string | null;
   groups: EditGroup[];
   rules: EditRule[];
 }

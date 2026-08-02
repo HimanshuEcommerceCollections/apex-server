@@ -8,6 +8,8 @@ export const updatePricingSchema = z
   .object({
     basePrice: z.coerce.number().int().min(0).max(MAX_CENTS).optional(),
     fromPrice: z.coerce.number().int().min(0).max(MAX_CENTS).nullable().optional(),
+    typicalDuration: z.string().trim().max(40).nullable().optional(),
+    recurringDiscount: z.string().trim().max(40).nullable().optional(),
     options: z
       .array(z.object({ id: z.string().uuid(), priceDelta: z.coerce.number().int().min(0).max(MAX_CENTS) }))
       .optional(),

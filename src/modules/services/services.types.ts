@@ -10,6 +10,8 @@ export interface ServiceListItem {
   currency: string;
   badges: string[];
   isRecurringEligible: boolean;
+  typicalDuration: string | null;
+  recurringDiscount: string | null;
   status: ServiceStatus;
   sortOrder: number;
   category: { slug: string; name: string } | null;

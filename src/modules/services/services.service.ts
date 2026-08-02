@@ -31,6 +31,8 @@ export class ServicesService {
       currency: r.currency,
       badges: r.badges,
       isRecurringEligible: r.isRecurringEligible,
+      typicalDuration: r.typicalDuration,
+      recurringDiscount: r.recurringDiscount,
       status: r.status,
       sortOrder: r.sortOrder,
       category: r.category ? { slug: r.category.slug, name: r.category.name } : null,

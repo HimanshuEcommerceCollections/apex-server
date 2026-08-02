@@ -84,6 +84,8 @@ export class CatalogService {
       basePrice: svc.basePrice,
       fromPrice: svc.fromPrice,
       currency: svc.currency,
+      typicalDuration: svc.typicalDuration,
+      recurringDiscount: svc.recurringDiscount,
       groups: svc.configGroups.map((g) => ({
         key: g.key,
         label: g.label,

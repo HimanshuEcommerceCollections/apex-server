@@ -12,7 +12,7 @@ import {
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { MembershipInterval } from "@prisma/client";
-import { AREAS, CATEGORIES, DEFAULT_COVERAGE, MEMBERSHIP_PLANS, SERVICES, type SeedService } from "./seed-data";
+import { AREAS, CATEGORIES, COMPARE_LABELS, DEFAULT_COVERAGE, MEMBERSHIP_PLANS, SERVICES, type SeedService } from "./seed-data";
 
 const prisma = new PrismaClient();
 const KEY_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -74,6 +74,7 @@ async function seedCategories(): Promise<Map<string, string>> {
 }
 
 async function seedService(s: SeedService, index: number, categoryId: string): Promise<string> {
+  const labels = COMPARE_LABELS[s.slug];
   const service = await prisma.service.upsert({
     where: { slug: s.slug },
     create: {
@@ -91,6 +92,8 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
       badges: s.badges ?? [],
       sortOrder: index,
       claimsBlock: s.claimsBlock ?? null,
+      typicalDuration: labels?.typicalDuration ?? null,
+      recurringDiscount: labels?.recurringDiscount ?? null,
       isRecurringEligible: s.isRecurringEligible ?? false,
     },
     update: {
@@ -105,6 +108,8 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
       badges: s.badges ?? [],
       sortOrder: index,
       claimsBlock: s.claimsBlock ?? null,
+      typicalDuration: labels?.typicalDuration ?? null,
+      recurringDiscount: labels?.recurringDiscount ?? null,
       isRecurringEligible: s.isRecurringEligible ?? false,
     },
   });

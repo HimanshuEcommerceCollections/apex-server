@@ -11,6 +11,8 @@ export type ServiceForEdit = Prisma.ServiceGetPayload<{ include: typeof editIncl
 export interface PricingUpdate {
   basePrice?: number;
   fromPrice?: number | null;
+  typicalDuration?: string | null;
+  recurringDiscount?: string | null;
   options?: { id: string; priceDelta: number }[];
   rules?: { id: string; value: number }[];
 }
@@ -36,12 +38,19 @@ export class CatalogRepository {
     ruleEffects: Map<string, Record<string, unknown>>,
   ): Promise<void> {
     await prisma.$transaction(async (tx) => {
-      if (changes.basePrice != null || changes.fromPrice !== undefined) {
+      if (
+        changes.basePrice != null ||
+        changes.fromPrice !== undefined ||
+        changes.typicalDuration !== undefined ||
+        changes.recurringDiscount !== undefined
+      ) {
         await tx.service.update({
           where: { id: serviceId },
           data: {
             ...(changes.basePrice != null ? { basePrice: changes.basePrice } : {}),
             ...(changes.fromPrice !== undefined ? { fromPrice: changes.fromPrice } : {}),
+            ...(changes.typicalDuration !== undefined ? { typicalDuration: changes.typicalDuration || null } : {}),
+            ...(changes.recurringDiscount !== undefined ? { recurringDiscount: changes.recurringDiscount || null } : {}),
           },
         });
       }

@@ -262,6 +262,8 @@ model Service {
   badges              String[]      @default([])
   sortOrder           Int           @default(0)
   claimsBlock         String?
+  typicalDuration     String? // display label for the compare table, e.g. "2–3 hrs" (admin-editable)
+  recurringDiscount   String? // display label, e.g. "up to 15%" (admin-editable)
   isRecurringEligible Boolean       @default(false)
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
