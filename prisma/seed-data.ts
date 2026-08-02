@@ -399,27 +399,175 @@ export interface SeedArea {
   zips: { zipCode: string; city: string; state: string }[];
 }
 
+// One area PER CITY -- the coverage list on the home page is the set of active
+// areas, so each city carries its own response-time label. `duration` is only
+// applied when an area is first created; admin edits win on re-seed.
+//
+// NOTE: `zipCode` is globally unique among non-deleted rows, so a ZIP belongs to
+// exactly one city. Each city is padded to 10 ZIPs -- the first few are its real
+// USPS ZIPs, the rest are neighbouring Triangle-area ZIPs assigned to the closest
+// serving city (Holly Springs, Garner, Knightdale, Fuquay-Varina and Morrisville
+// only have 1-2 ZIPs of their own). `city` records each ZIP's true postal city,
+// which is why the coverage list reads area names and not ZIP cities.
 export const AREAS: SeedArea[] = [
   {
-    slug: "wake-county",
-    name: "Wake County",
-    duration: "Same day",
+    slug: "cary",
+    name: "Cary",
+    duration: "15 MIN",
     zips: [
-      { zipCode: "27502", city: "Apex", state: "NC" },
-      { zipCode: "27523", city: "Apex", state: "NC" },
+      { zipCode: "27511", city: "Cary", state: "NC" },
+      { zipCode: "27512", city: "Cary", state: "NC" },
       { zipCode: "27513", city: "Cary", state: "NC" },
       { zipCode: "27518", city: "Cary", state: "NC" },
       { zipCode: "27519", city: "Cary", state: "NC" },
-      { zipCode: "27540", city: "Holly Springs", state: "NC" },
+      { zipCode: "27613", city: "Raleigh", state: "NC" },
+      { zipCode: "27703", city: "Durham", state: "NC" },
+      { zipCode: "27707", city: "Durham", state: "NC" },
+      { zipCode: "27709", city: "Research Triangle Park", state: "NC" },
+      { zipCode: "27713", city: "Durham", state: "NC" },
+    ],
+  },
+  {
+    slug: "apex",
+    name: "Apex",
+    duration: "18 MIN",
+    zips: [
+      { zipCode: "27502", city: "Apex", state: "NC" },
+      { zipCode: "27523", city: "Apex", state: "NC" },
+      { zipCode: "27539", city: "Apex", state: "NC" },
+      { zipCode: "27562", city: "New Hill", state: "NC" },
+      { zipCode: "27559", city: "Moncure", state: "NC" },
+      { zipCode: "27312", city: "Pittsboro", state: "NC" },
+      { zipCode: "27514", city: "Chapel Hill", state: "NC" },
+      { zipCode: "27515", city: "Chapel Hill", state: "NC" },
+      { zipCode: "27516", city: "Chapel Hill", state: "NC" },
+      { zipCode: "27517", city: "Chapel Hill", state: "NC" },
+    ],
+  },
+  {
+    slug: "morrisville",
+    name: "Morrisville",
+    duration: "20 MIN",
+    zips: [
       { zipCode: "27560", city: "Morrisville", state: "NC" },
-      { zipCode: "27587", city: "Wake Forest", state: "NC" },
+      { zipCode: "27617", city: "Raleigh", state: "NC" },
+      { zipCode: "27701", city: "Durham", state: "NC" },
+      { zipCode: "27702", city: "Durham", state: "NC" },
+      { zipCode: "27704", city: "Durham", state: "NC" },
+      { zipCode: "27705", city: "Durham", state: "NC" },
+      { zipCode: "27706", city: "Durham", state: "NC" },
+      { zipCode: "27708", city: "Durham", state: "NC" },
+      { zipCode: "27710", city: "Durham", state: "NC" },
+      { zipCode: "27712", city: "Durham", state: "NC" },
+    ],
+  },
+  {
+    slug: "raleigh",
+    name: "Raleigh",
+    duration: "22 MIN",
+    zips: [
       { zipCode: "27601", city: "Raleigh", state: "NC" },
+      { zipCode: "27603", city: "Raleigh", state: "NC" },
       { zipCode: "27604", city: "Raleigh", state: "NC" },
+      { zipCode: "27605", city: "Raleigh", state: "NC" },
       { zipCode: "27606", city: "Raleigh", state: "NC" },
+      { zipCode: "27607", city: "Raleigh", state: "NC" },
+      { zipCode: "27608", city: "Raleigh", state: "NC" },
+      { zipCode: "27609", city: "Raleigh", state: "NC" },
+      { zipCode: "27610", city: "Raleigh", state: "NC" },
+      { zipCode: "27612", city: "Raleigh", state: "NC" },
+    ],
+  },
+  {
+    slug: "holly-springs",
+    name: "Holly Springs",
+    duration: "25 MIN",
+    zips: [
+      { zipCode: "27540", city: "Holly Springs", state: "NC" },
+      { zipCode: "27592", city: "Willow Spring", state: "NC" },
+      { zipCode: "27505", city: "Broadway", state: "NC" },
+      { zipCode: "27330", city: "Sanford", state: "NC" },
+      { zipCode: "27331", city: "Sanford", state: "NC" },
+      { zipCode: "27332", city: "Sanford", state: "NC" },
+      { zipCode: "27207", city: "Bear Creek", state: "NC" },
+      { zipCode: "27208", city: "Bennett", state: "NC" },
+      { zipCode: "27213", city: "Goldston", state: "NC" },
+      { zipCode: "27344", city: "Siler City", state: "NC" },
+    ],
+  },
+  {
+    slug: "garner",
+    name: "Garner",
+    duration: "28 MIN",
+    zips: [
+      { zipCode: "27529", city: "Garner", state: "NC" },
+      { zipCode: "27520", city: "Clayton", state: "NC" },
+      { zipCode: "27527", city: "Clayton", state: "NC" },
+      { zipCode: "27577", city: "Smithfield", state: "NC" },
+      { zipCode: "27576", city: "Selma", state: "NC" },
+      { zipCode: "27524", city: "Four Oaks", state: "NC" },
+      { zipCode: "27504", city: "Benson", state: "NC" },
+      { zipCode: "27568", city: "Pine Level", state: "NC" },
+      { zipCode: "27569", city: "Princeton", state: "NC" },
+      { zipCode: "27593", city: "Wilsons Mills", state: "NC" },
+    ],
+  },
+  {
+    slug: "wake-forest",
+    name: "Wake Forest",
+    duration: "30 MIN",
+    zips: [
+      { zipCode: "27587", city: "Wake Forest", state: "NC" },
+      { zipCode: "27588", city: "Wake Forest", state: "NC" },
+      { zipCode: "27614", city: "Raleigh", state: "NC" },
+      { zipCode: "27615", city: "Raleigh", state: "NC" },
+      { zipCode: "27571", city: "Rolesville", state: "NC" },
+      { zipCode: "27596", city: "Youngsville", state: "NC" },
+      { zipCode: "27525", city: "Franklinton", state: "NC" },
+      { zipCode: "27549", city: "Louisburg", state: "NC" },
+      { zipCode: "27522", city: "Creedmoor", state: "NC" },
+      { zipCode: "27509", city: "Butner", state: "NC" },
+    ],
+  },
+  {
+    slug: "fuquay-varina",
+    name: "Fuquay-Varina",
+    duration: "35 MIN",
+    zips: [
       { zipCode: "27526", city: "Fuquay-Varina", state: "NC" },
+      { zipCode: "27501", city: "Angier", state: "NC" },
+      { zipCode: "27546", city: "Lillington", state: "NC" },
+      { zipCode: "27543", city: "Kipling", state: "NC" },
+      { zipCode: "27521", city: "Coats", state: "NC" },
+      { zipCode: "27506", city: "Buies Creek", state: "NC" },
+      { zipCode: "28323", city: "Bunnlevel", state: "NC" },
+      { zipCode: "28334", city: "Dunn", state: "NC" },
+      { zipCode: "28339", city: "Erwin", state: "NC" },
+      { zipCode: "28326", city: "Cameron", state: "NC" },
+    ],
+  },
+  {
+    slug: "knightdale",
+    name: "Knightdale",
+    duration: "38 MIN",
+    zips: [
+      { zipCode: "27545", city: "Knightdale", state: "NC" },
+      { zipCode: "27616", city: "Raleigh", state: "NC" },
+      { zipCode: "27591", city: "Wendell", state: "NC" },
+      { zipCode: "27597", city: "Zebulon", state: "NC" },
+      { zipCode: "27557", city: "Middlesex", state: "NC" },
+      { zipCode: "27555", city: "Micro", state: "NC" },
+      { zipCode: "27542", city: "Kenly", state: "NC" },
+      { zipCode: "27882", city: "Spring Hope", state: "NC" },
+      { zipCode: "27856", city: "Nashville", state: "NC" },
+      { zipCode: "27893", city: "Wilson", state: "NC" },
     ],
   },
 ];
+
+/// Areas replaced by the per-city split above; retired (soft-deleted) by the
+/// reshape script so they stop appearing in coverage.
+export const RETIRED_AREA_SLUGS: string[] = ["wake-county"];
 
 /** Which areas each service covers by default (slug -> area slugs). Absent = all areas. */
 export const DEFAULT_COVERAGE: Record<string, string[]> = {}; // empty -> seed grants every service to every area
