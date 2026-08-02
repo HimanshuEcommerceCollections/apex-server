@@ -22,6 +22,9 @@
 
 generator client {
   provider = "prisma-client-js"
+  // "native" for local dev; "rhel-openssl-3.0.x" is the Vercel / AWS Lambda
+  // (Node 20/22) runtime engine — without it the client 500s in production.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
