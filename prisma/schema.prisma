@@ -264,6 +264,7 @@ model Service {
   claimsBlock         String?
   typicalDuration     String? // display label for the compare table, e.g. "2–3 hrs" (admin-editable)
   recurringDiscount   String? // display label, e.g. "up to 15%" (admin-editable)
+  recurringHeading    String? // heading for the service-page "Recurring plans" section (admin-editable)
   isRecurringEligible Boolean       @default(false)
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
@@ -271,6 +272,7 @@ model Service {
   category        ServiceCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   configGroups    ServiceConfigGroup[]
   pricingRules    ServicePricingRule[]
+  recurringPlans  ServiceRecurringPlan[]
   bookings        Booking[]
   configurations  BookingConfiguration[]
   quoteRequests   QuoteRequest[]
@@ -281,6 +283,28 @@ model Service {
 
   @@index([categoryId, sortOrder])
   @@index([status])
+}
+
+/// Marketing "Recurring plans" cards on each service page (display-only, admin-editable).
+/// Amounts are stored as display strings (e.g. "$119") — not summed by the pricing engine.
+model ServiceRecurringPlan {
+  id        String   @id @default(uuid())
+  serviceId String
+  name      String // e.g. "Weekly"
+  freq      String // cadence label, e.g. "Every week"
+  amount    String // display price, e.g. "$119"
+  unit      String? // e.g. "/visit"
+  disc      String? // e.g. "Save 15%"
+  best      Boolean  @default(false) // renders the "Most popular" tag
+  cta       String // CTA label, e.g. "Choose weekly"
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, active, sortOrder])
 }
 
 model ServiceConfigGroup {
@@ -489,6 +513,12 @@ model ProApplication {
   zip              String
   trades           String[]
   acknowledgements Json
+  // Applicant profile from the public form — all optional, display-only.
+  experience       String? // e.g. "3–5 years"
+  company          String?
+  availability     String? // e.g. "Weekends only"
+  preferredStart   String? // e.g. "Within 2 weeks"
+  intro            String?
   status           ProApplicationStatus @default(RECEIVED)
   notes            String?
   promotedUserId   String? // 07: soft ref to the PROFESSIONAL User created on approval

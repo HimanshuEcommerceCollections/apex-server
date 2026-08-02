@@ -20,3 +20,20 @@ export const updatePricingSchema = z
       .optional(),
   })
   .refine((d) => Object.keys(d).length > 0, { message: "At least one field is required" });
+
+// Replace-all editor for a service's "Recurring plans" cards: send the heading +
+// the full ordered plan list (row order = display order).
+const recurringPlanSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  freq: z.string().trim().min(1).max(60),
+  amount: z.string().trim().min(1).max(20),
+  unit: z.string().trim().max(20).nullable().optional(),
+  disc: z.string().trim().max(30).nullable().optional(),
+  best: z.boolean().optional(),
+  cta: z.string().trim().min(1).max(40),
+});
+
+export const replaceRecurringSchema = z.object({
+  heading: z.string().trim().max(120).nullable().optional(),
+  plans: z.array(recurringPlanSchema).max(8),
+});

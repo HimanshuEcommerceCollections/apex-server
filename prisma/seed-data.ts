@@ -42,6 +42,7 @@ export interface SeedService {
   description: string;
   categorySlug: string;
   mode: "PRICED" | "FROM" | "QUOTE";
+  basePrice?: number; // cents; engine base × quantity (default 0). >0 for hourly services (handyman).
   fromPrice?: number;
   isRecurringEligible?: boolean;
   badges?: string[];
@@ -90,6 +91,60 @@ export const COMPARE_LABELS: Record<string, { typicalDuration: string; recurring
   "smart-home": { typicalDuration: "1–4 hrs", recurringDiscount: "15% (3+)" },
   "handyman": { typicalDuration: "Per block", recurringDiscount: null },
   "tree-stump": { typicalDuration: "Varies", recurringDiscount: null },
+};
+
+// ── Service-page "Recurring plans" cards (admin-editable via /admin/recurring-plans).
+// Amounts are display strings only (never summed by the pricing engine).
+export interface SeedRecurringPlan {
+  name: string;
+  freq: string;
+  amount: string;
+  unit?: string;
+  disc?: string;
+  best?: boolean;
+  cta: string;
+}
+export interface SeedRecurringSection {
+  heading: string;
+  plans: SeedRecurringPlan[];
+}
+
+const DEFAULT_RECURRING_HEADING = "Book once. Never think about it again.";
+
+/** The standard one-time / weekly / biweekly trio most services show. */
+const stdRecurring = (amount: string): SeedRecurringPlan[] => [
+  { name: "One-time", freq: "Single visit", amount, cta: "Choose one-time" },
+  { name: "Weekly", freq: "Every week", amount, unit: "/visit", disc: "Save 15%", best: true, cta: "Choose weekly" },
+  { name: "Biweekly", freq: "Every 2 weeks", amount, unit: "/visit", disc: "Save 10%", cta: "Choose biweekly" },
+];
+
+export const RECURRING_PLANS: Record<string, SeedRecurringSection> = {
+  "cleaning": {
+    heading: DEFAULT_RECURRING_HEADING,
+    plans: [
+      { name: "One-time", freq: "Single visit", amount: "$170", cta: "Choose one-time" },
+      { name: "Weekly", freq: "Every week", amount: "$133", unit: "/visit", disc: "Save 22%", best: true, cta: "Choose weekly" },
+      { name: "Biweekly", freq: "Every 2 weeks", amount: "$145", unit: "/visit", disc: "Save 15%", cta: "Choose biweekly" },
+      { name: "Monthly", freq: "Every month", amount: "$156", unit: "/visit", disc: "Save 8%", cta: "Choose monthly" },
+    ],
+  },
+  "lawn-care": {
+    heading: "Book once. Never chase a mow again.",
+    plans: [
+      { name: "One-time", freq: "Single visit", amount: "$59", cta: "Choose one-time" },
+      { name: "Weekly", freq: "Every week", amount: "$53", unit: "/visit", disc: "Save 10%", best: true, cta: "Choose weekly" },
+      { name: "Biweekly", freq: "Every 2 weeks", amount: "$56", unit: "/visit", disc: "Save 5%", cta: "Choose biweekly" },
+    ],
+  },
+  "power-washing": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$79") },
+  "painting": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$349") },
+  "junk-removal": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$99") },
+  "pool": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$119") },
+  "pest-control": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$99") },
+  "home-security": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$199") },
+  "smart-home": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$149") },
+  "handyman": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$95") },
+  "tree-stump": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$199") },
 };
 
 const bedroomsOptions: SeedOption[] = [1, 2, 3, 4, 5].map((n) => ({
@@ -172,8 +227,33 @@ export const SERVICES: SeedService[] = [
           { key: "xlarge", label: "Extra large yard", sublabel: "1+ acre", delta: 13000 },
         ],
       },
+      {
+        key: "service",
+        label: "Service",
+        inputType: "SELECT",
+        isRequired: true,
+        options: [
+          { key: "mow", label: "Mow & edge", delta: 0 },
+          { key: "full", label: "Full care +", delta: 1500 },
+        ],
+      },
+      {
+        key: "frequency",
+        label: "Frequency",
+        inputType: "SELECT",
+        uiHint: "frequency",
+        isRequired: true,
+        options: [
+          { key: "one-time", label: "One-time", delta: 0 },
+          { key: "weekly", label: "Weekly", sublabel: "Save 10%", delta: 0 },
+          { key: "biweekly", label: "Every two weeks", sublabel: "Save 5%", delta: 0 },
+        ],
+      },
     ],
-    rules: [],
+    rules: [
+      { key: "lawn-weekly-discount", label: "Weekly plan discount", trigger: { kind: "option_selected", group: "frequency", option: "weekly" }, effect: { kind: "discount", calc: "percent", value: 10 }, sortOrder: 1 },
+      { key: "lawn-biweekly-discount", label: "Bi-weekly plan discount", trigger: { kind: "option_selected", group: "frequency", option: "biweekly" }, effect: { kind: "discount", calc: "percent", value: 5 }, sortOrder: 2 },
+    ],
   },
   {
     slug: "pool",
@@ -186,33 +266,30 @@ export const SERVICES: SeedService[] = [
     fromPrice: 9900, // marketing "from $99" teaser
     groups: [
       {
-        key: "pool-size",
-        label: "Pool size",
-        inputType: "SELECT",
-        isRequired: true,
-        options: [
-          { key: "small", label: "Small pool", sublabel: "Up to 15,000 gal", delta: 8900 },
-          { key: "medium", label: "Medium pool", sublabel: "15,000 to 25,000 gal", delta: 12000 },
-          { key: "large", label: "Large pool", sublabel: "25,000 to 40,000 gal", delta: 15900 },
-          { key: "custom", label: "Custom pool", sublabel: "Over 40,000 gal", delta: 19900 },
-        ],
-      },
-      {
         key: "frequency",
         label: "Service frequency",
         inputType: "SELECT",
         uiHint: "frequency",
         isRequired: true,
         options: [
-          { key: "weekly", label: "Weekly", delta: 0 },
-          { key: "biweekly", label: "Every two weeks", delta: 0 },
-          { key: "monthly", label: "Monthly", sublabel: "Save 15% (SAMPLE)", delta: 0 },
+          { key: "one-time", label: "One-time", delta: 14900 },
+          { key: "weekly", label: "Weekly", delta: 11900 },
+          { key: "biweekly", label: "Every two weeks", delta: 12900 },
+          { key: "monthly", label: "Monthly", delta: 13900 },
+        ],
+      },
+      {
+        key: "type",
+        label: "Service type",
+        inputType: "SELECT",
+        isRequired: true,
+        options: [
+          { key: "standard", label: "Standard clean", delta: 0 },
+          { key: "green", label: "Green-to-clean +", delta: 8000 },
         ],
       },
     ],
-    rules: [
-      { key: "freq-monthly-discount", label: "Monthly visit discount", trigger: { kind: "option_selected", group: "frequency", option: "monthly" }, effect: { kind: "discount", calc: "percent", value: 15 }, sortOrder: 1 },
-    ],
+    rules: [],
   },
   {
     slug: "pest-control",
@@ -226,26 +303,25 @@ export const SERVICES: SeedService[] = [
     claimsBlock: "NC pesticide-application licensing expectations are collected from pros and shown for transparency; Apex does not itself hold the license.",
     groups: [
       {
-        key: "plan",
-        label: "Protection plan",
+        key: "property",
+        label: "Property",
         inputType: "SELECT",
         isRequired: true,
         options: [
-          { key: "one-time", label: "One-time treatment", delta: 19900 },
-          { key: "quarterly", label: "Quarterly plan", sublabel: "Price per visit", delta: 9900 },
-          { key: "monthly", label: "Monthly plan", sublabel: "Price per visit", delta: 7900 },
+          { key: "apt", label: "Apartment", delta: 6900 },
+          { key: "house", label: "House", delta: 8900 },
+          { key: "large", label: "Large home", delta: 11900 },
         ],
       },
       {
-        key: "pest-type",
-        label: "What are you dealing with?",
+        key: "service",
+        label: "Service",
         inputType: "SELECT",
         isRequired: true,
         options: [
-          { key: "general", label: "General prevention", delta: 0 },
-          { key: "indoor", label: "Indoor issue", delta: 0 },
-          { key: "outdoor", label: "Outdoor issue", delta: 0 },
-          { key: "rodent", label: "Rodents / wildlife", delta: 0 },
+          { key: "general", label: "General pest", delta: 0 },
+          { key: "mosquito", label: "Mosquito +", delta: 3000 },
+          { key: "termite", label: "Termite", delta: 0 },
         ],
       },
     ],
@@ -285,17 +361,18 @@ export const SERVICES: SeedService[] = [
     groups: [
       {
         key: "devices",
-        label: "Devices to install",
+        label: "Choose your devices",
         inputType: "MULTISELECT",
         uiHint: "device-checklist",
         isRequired: true,
         selectMin: 1,
         options: [
-          { key: "smart-plug-hub", label: "Smart plug / hub", delta: 4900 },
-          { key: "video-doorbell", label: "Video doorbell", delta: 9900 },
-          { key: "security-camera", label: "Security camera", delta: 11900 },
-          { key: "smart-thermostat", label: "Smart thermostat", delta: 12900 },
-          { key: "smart-lock", label: "Smart lock", delta: 14900 },
+          { key: "thermo", label: "Smart thermostat", delta: 12900 },
+          { key: "doorbell", label: "Video doorbell", delta: 14900 },
+          { key: "cam", label: "Cameras (2-pack)", delta: 19900 },
+          { key: "lock", label: "Smart locks", delta: 13900 },
+          { key: "light", label: "Lighting kit", delta: 11900 },
+          { key: "hub", label: "Central hub", delta: 9900 },
         ],
       },
     ],
@@ -314,15 +391,17 @@ export const SERVICES: SeedService[] = [
     groups: [
       {
         key: "surfaces",
-        label: "Surfaces",
+        label: "What needs washing?",
         inputType: "MULTISELECT",
         isRequired: true,
         selectMin: 1,
         options: [
-          { key: "fence", label: "Fence", delta: 9900 },
-          { key: "driveway-sidewalk", label: "Driveway / sidewalk", delta: 12900 },
-          { key: "deck-patio", label: "Deck / patio", delta: 14900 },
-          { key: "house-siding", label: "House siding", delta: 19900 },
+          { key: "drive", label: "Driveway", delta: 9900 },
+          { key: "siding", label: "House siding", delta: 14900 },
+          { key: "deck", label: "Deck / patio", delta: 11900 },
+          { key: "fence", label: "Fence", delta: 8900 },
+          { key: "roof", label: "Roof / gutters", delta: 19900 },
+          { key: "walk", label: "Walkways", delta: 7900 },
         ],
       },
     ],
@@ -335,18 +414,19 @@ export const SERVICES: SeedService[] = [
     description: "From small repairs to fixture installs and TV mounting.",
     categorySlug: "one-time",
     mode: "FROM",
+    basePrice: 9500, // $95/hr; engine multiplies by quantity = estimated hours
     fromPrice: 15000, // marketing "from $150" (compare table)
     groups: [
       {
-        key: "job-type",
-        label: "What do you need done?",
+        key: "kind",
+        label: "Task type",
         inputType: "SELECT",
         isRequired: true,
         options: [
-          { key: "small-repair", label: "Small repair", delta: 6500 },
-          { key: "furniture-assembly", label: "Furniture assembly", delta: 7900 },
-          { key: "fixture-install", label: "Fixture install", delta: 8900 },
-          { key: "tv-mounting", label: "TV mounting", delta: 9900 },
+          { key: "general", label: "Small repair", delta: 0 },
+          { key: "mount", label: "Mount / hang", delta: 0 },
+          { key: "assemble", label: "Assembly", delta: 0 },
+          { key: "multi", label: "Punch list", delta: 0 },
         ],
       },
     ],

@@ -1,8 +1,14 @@
-import { catalogRepository, type PricingUpdate, type ServiceForEdit } from "./catalog.repository";
+import {
+  catalogRepository,
+  type PricingUpdate,
+  type RecurringPlanInput,
+  type ServiceForEdit,
+  type ServiceRecurringRef,
+} from "./catalog.repository";
 import { auditService } from "../audit";
 import { ApiError } from "../../utils/api-error";
 import { pingClientRevalidate } from "./catalog.revalidate";
-import type { ServiceEditView } from "./catalog.types";
+import type { RecurringEditView, ServiceEditView } from "./catalog.types";
 
 interface RuleEffect {
   kind: string;
@@ -64,6 +70,60 @@ export class CatalogService {
     void pingClientRevalidate(["catalog", `service:${svc.slug}`]);
 
     return this.serialize(updated!);
+  }
+
+  async getRecurring(idOrSlug: string): Promise<RecurringEditView> {
+    const svc = await catalogRepository.findServiceRecurring(idOrSlug);
+    if (!svc) throw ApiError.notFound("Service not found", { code: "SERVICE_NOT_FOUND" });
+    return this.serializeRecurring(svc);
+  }
+
+  async replaceRecurring(
+    idOrSlug: string,
+    dto: { heading?: string | null; plans: RecurringPlanInput[] },
+    actorUserId: string,
+    ip?: string,
+  ): Promise<RecurringEditView> {
+    const svc = await catalogRepository.findServiceRecurring(idOrSlug);
+    if (!svc) throw ApiError.notFound("Service not found", { code: "SERVICE_NOT_FOUND" });
+
+    const before = this.serializeRecurring(svc);
+    await catalogRepository.replaceRecurring(svc.id, dto.heading ?? null, dto.plans);
+    const updated = await catalogRepository.findServiceRecurring(svc.id);
+    const after = updated ? this.serializeRecurring(updated) : null;
+
+    await auditService.record({
+      actorUserId,
+      action: "catalog.recurring.update",
+      entityType: "Service",
+      entityId: svc.id,
+      before,
+      after,
+      ip: ip ?? null,
+    });
+
+    // Bust the marketing client's ISR cache for this service (fire-and-forget).
+    void pingClientRevalidate(["catalog", `service:${svc.slug}`]);
+
+    return after!;
+  }
+
+  private serializeRecurring(svc: ServiceRecurringRef): RecurringEditView {
+    return {
+      serviceSlug: svc.slug,
+      serviceName: svc.name,
+      heading: svc.recurringHeading,
+      plans: svc.recurringPlans.map((p) => ({
+        id: p.id,
+        name: p.name,
+        freq: p.freq,
+        amount: p.amount,
+        unit: p.unit,
+        disc: p.disc,
+        best: p.best,
+        cta: p.cta,
+      })),
+    };
   }
 
   private snapshot(svc: ServiceForEdit) {

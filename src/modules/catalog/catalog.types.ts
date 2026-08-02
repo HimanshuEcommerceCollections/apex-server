@@ -22,6 +22,22 @@ export interface EditRule {
   calc: string; // "percent" | "flat"
   value: number;
 }
+export interface RecurringPlanEditView {
+  id: string;
+  name: string;
+  freq: string;
+  amount: string;
+  unit: string | null;
+  disc: string | null;
+  best: boolean;
+  cta: string;
+}
+export interface RecurringEditView {
+  serviceSlug: string;
+  serviceName: string;
+  heading: string | null;
+  plans: RecurringPlanEditView[];
+}
 export interface ServiceEditView {
   id: string;
   slug: string;

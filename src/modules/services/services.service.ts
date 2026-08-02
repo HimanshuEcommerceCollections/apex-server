@@ -1,6 +1,6 @@
 import { ServiceStatus } from "../../enums";
 import { ApiError } from "../../utils/api-error";
-import { servicesRepository, type ServiceWithCategory } from "./services.repository";
+import { servicesRepository, type ServiceWithCategory, type ServiceWithDetail } from "./services.repository";
 import type { ServiceDetail, ServiceListItem } from "./services.types";
 
 /** DRAFT/INACTIVE services are hidden from the public catalog. */
@@ -39,7 +39,7 @@ export class ServicesService {
     };
   }
 
-  private serializeDetail(r: ServiceWithCategory): ServiceDetail {
+  private serializeDetail(r: ServiceWithDetail): ServiceDetail {
     return {
       ...this.serializeListItem(r),
       categoryId: r.categoryId,
@@ -47,6 +47,17 @@ export class ServicesService {
       pricingRef: r.pricingRef,
       basePrice: r.basePrice,
       claimsBlock: r.claimsBlock,
+      recurringHeading: r.recurringHeading,
+      recurringPlans: r.recurringPlans.map((p) => ({
+        id: p.id,
+        name: p.name,
+        freq: p.freq,
+        amount: p.amount,
+        unit: p.unit,
+        disc: p.disc,
+        best: p.best,
+        cta: p.cta,
+      })),
     };
   }
 }

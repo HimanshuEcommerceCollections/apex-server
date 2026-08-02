@@ -4,7 +4,17 @@ import { ServiceStatus } from "../../enums";
 
 const withCategory = { category: { select: { slug: true, name: true } } } as const;
 
+// Detail also pulls the active "Recurring plans" cards (ordered) for the service page.
+const withDetail = {
+  category: { select: { slug: true, name: true } },
+  recurringPlans: {
+    where: { active: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  },
+} satisfies Prisma.ServiceInclude;
+
 export type ServiceWithCategory = Prisma.ServiceGetPayload<{ include: typeof withCategory }>;
+export type ServiceWithDetail = Prisma.ServiceGetPayload<{ include: typeof withDetail }>;
 
 export class ServicesRepository {
   findMany(args: { status?: ServiceStatus; categorySlug?: string }) {
@@ -21,7 +31,7 @@ export class ServicesRepository {
   findByIdOrSlug(idOrSlug: string) {
     return prisma.service.findFirst({
       where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
-      include: withCategory,
+      include: withDetail,
     });
   }
 

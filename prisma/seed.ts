@@ -12,7 +12,7 @@ import {
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { MembershipInterval } from "@prisma/client";
-import { AREAS, CATEGORIES, COMPARE_LABELS, DEFAULT_COVERAGE, MEMBERSHIP_PLANS, SERVICES, type SeedService } from "./seed-data";
+import { AREAS, CATEGORIES, COMPARE_LABELS, DEFAULT_COVERAGE, MEMBERSHIP_PLANS, RECURRING_PLANS, SERVICES, type SeedService } from "./seed-data";
 
 const prisma = new PrismaClient();
 const KEY_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -85,7 +85,7 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
       description: s.description,
       pricingMode: s.mode as PricingMode,
       pricingRef: s.slug,
-      basePrice: 0,
+      basePrice: s.basePrice ?? 0,
       fromPrice: s.fromPrice ?? null,
       currency: "USD",
       status: ServiceStatus.ACTIVE,
@@ -94,6 +94,7 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
       claimsBlock: s.claimsBlock ?? null,
       typicalDuration: labels?.typicalDuration ?? null,
       recurringDiscount: labels?.recurringDiscount ?? null,
+      recurringHeading: RECURRING_PLANS[s.slug]?.heading ?? null,
       isRecurringEligible: s.isRecurringEligible ?? false,
     },
     update: {
@@ -103,6 +104,7 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
       description: s.description,
       pricingMode: s.mode as PricingMode,
       pricingRef: s.slug,
+      basePrice: s.basePrice ?? 0,
       fromPrice: s.fromPrice ?? null,
       status: ServiceStatus.ACTIVE,
       badges: s.badges ?? [],
@@ -110,9 +112,30 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
       claimsBlock: s.claimsBlock ?? null,
       typicalDuration: labels?.typicalDuration ?? null,
       recurringDiscount: labels?.recurringDiscount ?? null,
+      recurringHeading: RECURRING_PLANS[s.slug]?.heading ?? null,
       isRecurringEligible: s.isRecurringEligible ?? false,
     },
   });
+
+  // Resync the marketing "Recurring plans" cards (delete-and-recreate).
+  await prisma.serviceRecurringPlan.deleteMany({ where: { serviceId: service.id } });
+  const recurring = RECURRING_PLANS[s.slug];
+  if (recurring) {
+    await prisma.serviceRecurringPlan.createMany({
+      data: recurring.plans.map((p, pi) => ({
+        serviceId: service.id,
+        name: p.name,
+        freq: p.freq,
+        amount: p.amount,
+        unit: p.unit ?? null,
+        disc: p.disc ?? null,
+        best: p.best ?? false,
+        cta: p.cta,
+        sortOrder: pi,
+        active: true,
+      })),
+    });
+  }
 
   // Resync config (delete-and-recreate — safe: bookings snapshot keys, not ids).
   await prisma.serviceConfigGroup.deleteMany({ where: { serviceId: service.id } });

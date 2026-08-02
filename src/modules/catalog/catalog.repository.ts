@@ -17,6 +17,26 @@ export interface PricingUpdate {
   rules?: { id: string; value: number }[];
 }
 
+export interface RecurringPlanInput {
+  name: string;
+  freq: string;
+  amount: string;
+  unit?: string | null;
+  disc?: string | null;
+  best?: boolean;
+  cta: string;
+}
+
+const recurringRef = {
+  id: true,
+  slug: true,
+  name: true,
+  recurringHeading: true,
+  recurringPlans: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+} satisfies Prisma.ServiceSelect;
+
+export type ServiceRecurringRef = Prisma.ServiceGetPayload<{ select: typeof recurringRef }>;
+
 /**
  * Runtime writer of catalog PRICING fields (Service.basePrice/fromPrice,
  * ServiceConfigOption.priceDelta, ServicePricingRule.effect.value). Reads ALL
@@ -29,6 +49,36 @@ export class CatalogRepository {
       where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
       include: editInclude,
     });
+  }
+
+  /** Service + its recurring-plan cards (all rows, any status) for the admin editor. */
+  findServiceRecurring(idOrSlug: string): Promise<ServiceRecurringRef | null> {
+    return prisma.service.findFirst({
+      where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
+      select: recurringRef,
+    });
+  }
+
+  /** Replace a service's recurring section (heading + full ordered plan list) atomically. */
+  async replaceRecurring(serviceId: string, heading: string | null, plans: RecurringPlanInput[]): Promise<void> {
+    await prisma.$transaction([
+      prisma.service.update({ where: { id: serviceId }, data: { recurringHeading: heading } }),
+      prisma.serviceRecurringPlan.deleteMany({ where: { serviceId } }),
+      prisma.serviceRecurringPlan.createMany({
+        data: plans.map((p, i) => ({
+          serviceId,
+          name: p.name,
+          freq: p.freq,
+          amount: p.amount,
+          unit: p.unit ?? null,
+          disc: p.disc ?? null,
+          best: p.best ?? false,
+          cta: p.cta,
+          sortOrder: i,
+          active: true,
+        })),
+      }),
+    ]);
   }
 
   /** Apply a pricing update atomically. `ruleEffects` carries the pre-read effect JSONs. */
