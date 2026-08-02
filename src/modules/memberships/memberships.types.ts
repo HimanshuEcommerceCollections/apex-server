@@ -7,6 +7,8 @@ export interface PlanView {
   description: string | null;
   interval: MembershipInterval;
   intervalCount: number;
+  fromPrice: number | null;
+  currency: string;
   active: boolean;
   service: { slug: string; name: string } | null;
 }

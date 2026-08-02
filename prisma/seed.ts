@@ -11,7 +11,8 @@ import {
   UserStatus,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { AREAS, CATEGORIES, DEFAULT_COVERAGE, SERVICES, type SeedService } from "./seed-data";
+import { MembershipInterval } from "@prisma/client";
+import { AREAS, CATEGORIES, DEFAULT_COVERAGE, MEMBERSHIP_PLANS, SERVICES, type SeedService } from "./seed-data";
 
 const prisma = new PrismaClient();
 const KEY_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -228,6 +229,31 @@ async function seedAdmin(): Promise<void> {
   console.log(`✓ bootstrap admin created: ${email} / ${password}  (change this!)`);
 }
 
+/** Display-only membership plans (no Stripe yet) — drive the /membership-plans cards. */
+async function seedMembershipPlans(serviceIds: Map<string, string>): Promise<void> {
+  for (const p of MEMBERSHIP_PLANS) {
+    const serviceId = serviceIds.get(p.serviceSlug);
+    if (!serviceId) continue;
+    await prisma.membershipPlan.upsert({
+      where: { key: p.key },
+      create: {
+        key: p.key,
+        name: p.name,
+        serviceId,
+        interval: p.interval as MembershipInterval,
+        intervalCount: p.intervalCount,
+        fromPrice: p.fromPrice,
+        currency: "USD",
+        stripeProductId: null,
+        stripeAnchorPriceId: null,
+        active: true,
+      },
+      // don't overwrite Stripe IDs once a plan has been wired to Stripe.
+      update: { name: p.name, serviceId, fromPrice: p.fromPrice, active: true },
+    });
+  }
+}
+
 async function main(): Promise<void> {
   validate();
 
@@ -237,6 +263,9 @@ async function main(): Promise<void> {
     serviceIds.set(s.slug, await seedService(s, i, categoryIds.get(s.categorySlug)!));
   }
   console.log(`✓ seeded ${categoryIds.size} categories, ${serviceIds.size} services`);
+
+  await seedMembershipPlans(serviceIds);
+  console.log(`✓ seeded ${MEMBERSHIP_PLANS.length} membership plans (display-only)`);
 
   const areaIds = await seedGeography();
   const zipCount = AREAS.reduce((n, a) => n + a.zips.length, 0);

@@ -56,6 +56,26 @@ export const CATEGORIES = [
   { slug: "specialty", name: "Specialty & quote", sortOrder: 2 },
 ];
 
+// Display-only membership plans (marketing catalog cards). No Stripe IDs yet — they
+// drive the /membership-plans pricing but can't be subscribed to until Stripe is
+// configured and the plans are wired (admin createPlan). fromPrice is the member
+// "from $X / visit" teaser (admin-editable).
+export interface SeedMembershipPlan {
+  key: string;
+  name: string;
+  serviceSlug: string;
+  interval: "WEEK" | "MONTH";
+  intervalCount: number;
+  fromPrice: number; // cents
+}
+
+export const MEMBERSHIP_PLANS: SeedMembershipPlan[] = [
+  { key: "cleaning", name: "Home Cleaning", serviceSlug: "cleaning", interval: "WEEK", intervalCount: 2, fromPrice: 14900 },
+  { key: "lawn-care", name: "Lawn Care", serviceSlug: "lawn-care", interval: "WEEK", intervalCount: 1, fromPrice: 5300 },
+  { key: "pool", name: "Pool Service", serviceSlug: "pool", interval: "WEEK", intervalCount: 1, fromPrice: 11900 },
+  { key: "power-washing", name: "Power Washing", serviceSlug: "power-washing", interval: "MONTH", intervalCount: 3, fromPrice: 7900 },
+];
+
 const bedroomsOptions: SeedOption[] = [1, 2, 3, 4, 5].map((n) => ({
   key: String(n),
   label: `${n} bedroom${n > 1 ? "s" : ""}`,

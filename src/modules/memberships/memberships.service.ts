@@ -28,6 +28,7 @@ export class MembershipsService {
     serviceId: string;
     interval: "WEEK" | "MONTH";
     intervalCount?: number;
+    fromPrice?: number;
   }): Promise<PlanView> {
     const svc = await servicesRepository.findByIdOrSlug(dto.serviceId);
     if (!svc) throw ApiError.badRequest("Unknown service", { code: "SERVICE_NOT_FOUND" });
@@ -50,6 +51,7 @@ export class MembershipsService {
       serviceId: svc.id,
       interval: dto.interval as MembershipInterval,
       intervalCount: dto.intervalCount ?? 1,
+      fromPrice: dto.fromPrice ?? null,
       stripeProductId: product.id,
       stripeAnchorPriceId: price.id,
       active: true,
@@ -57,7 +59,10 @@ export class MembershipsService {
     return this.serializePlan(plan);
   }
 
-  async updatePlan(id: string, changes: { name?: string; description?: string | null; active?: boolean; sortOrder?: number }): Promise<PlanView> {
+  async updatePlan(
+    id: string,
+    changes: { name?: string; description?: string | null; active?: boolean; sortOrder?: number; fromPrice?: number | null },
+  ): Promise<PlanView> {
     const existing = await membershipsRepository.findPlanById(id);
     if (!existing) throw ApiError.notFound("Plan not found", { code: "PLAN_NOT_FOUND" });
     const plan = await membershipsRepository.updatePlan(id, changes);
@@ -82,6 +87,10 @@ export class MembershipsService {
   }): Promise<{ checkout_url: string | null }> {
     const plan = await membershipsRepository.findPlanById(dto.planId);
     if (!plan || !plan.active) throw ApiError.badRequest("Plan unavailable", { code: "PLAN_UNAVAILABLE" });
+    // Display-only plans (marketing catalog) have no Stripe anchor yet.
+    if (!plan.stripeAnchorPriceId) {
+      throw ApiError.badRequest("This plan isn't open for subscription yet", { code: "PLAN_NOT_SUBSCRIBABLE" });
+    }
 
     const cfg = await serviceConfigRepository.findServiceWithConfig(plan.serviceId);
     const groups: GroupDescriptor[] = (cfg?.configGroups ?? []).map((g) => ({
@@ -123,7 +132,7 @@ export class MembershipsService {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
-      line_items: [{ price: plan.stripeAnchorPriceId, quantity: 1 }],
+      line_items: [{ price: plan.stripeAnchorPriceId!, quantity: 1 }], // non-null: guarded above
       subscription_data: { metadata: { ...brandMetadata(), membershipId: membership.id } },
       metadata: { ...brandMetadata(), membershipId: membership.id },
       success_url: `${env.CLIENT_BASE_URL}/account?membership=success`,
@@ -283,6 +292,8 @@ export class MembershipsService {
       description: p.description,
       interval: p.interval,
       intervalCount: p.intervalCount,
+      fromPrice: p.fromPrice,
+      currency: p.currency,
       active: p.active,
       service: p.service ? { slug: p.service.slug, name: p.service.name } : null,
     };

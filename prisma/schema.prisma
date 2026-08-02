@@ -806,8 +806,10 @@ model MembershipPlan {
   serviceId           String
   interval            MembershipInterval
   intervalCount       Int                @default(1)
-  stripeProductId     String
-  stripeAnchorPriceId String // $0 cadence anchor; real amount is a per-cycle invoice item
+  fromPrice           Int? // cents; display-only "from $X / visit" member price (admin-editable)
+  currency            String             @default("USD")
+  stripeProductId     String? // null until wired to Stripe (a plan can exist display-only)
+  stripeAnchorPriceId String? // $0 cadence anchor; null until Stripe-wired
   active              Boolean            @default(true)
   sortOrder           Int                @default(0)
   createdAt           DateTime           @default(now())
