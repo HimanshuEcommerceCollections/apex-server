@@ -4,6 +4,7 @@ export interface AreaView {
   id: string;
   name: string;
   slug: string;
+  duration: string | null;
   status: GeoStatus;
   deletedAt: string | null;
   createdAt: string;

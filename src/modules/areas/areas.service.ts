@@ -34,17 +34,20 @@ export class AreasService {
     return area;
   }
 
-  async create(name: string): Promise<AreaView> {
+  async create(name: string, duration?: string | null): Promise<AreaView> {
     if (await areasRepository.findActiveByName(name)) {
       throw ApiError.conflict("An area with this name already exists", { code: "AREA_NAME_TAKEN" });
     }
-    const area = await areasRepository.create({ name, slug: slugify(name) });
+    const area = await areasRepository.create({ name, slug: slugify(name), duration: duration || null });
     return this.serialize(area);
   }
 
-  async update(id: string, changes: { name?: string; status?: "ACTIVE" | "INACTIVE" }): Promise<AreaView> {
+  async update(
+    id: string,
+    changes: { name?: string; status?: "ACTIVE" | "INACTIVE"; duration?: string | null },
+  ): Promise<AreaView> {
     const area = await this.getOrThrow(id);
-    const data: { name?: string; slug?: string; status?: GeoStatus } = {};
+    const data: { name?: string; slug?: string; status?: GeoStatus; duration?: string | null } = {};
     if (changes.name && changes.name !== area.name) {
       if (await areasRepository.findActiveByName(changes.name, id)) {
         throw ApiError.conflict("An area with this name already exists", { code: "AREA_NAME_TAKEN" });
@@ -53,6 +56,8 @@ export class AreasService {
       data.slug = slugify(changes.name);
     }
     if (changes.status) data.status = changes.status as GeoStatus;
+    // `undefined` = leave unchanged; "" or null = clear the label.
+    if (changes.duration !== undefined) data.duration = changes.duration || null;
     const updated = await areasRepository.update(id, data);
     return this.serialize(updated);
   }
@@ -75,13 +80,20 @@ export class AreasService {
 
   /** Public: active areas with their active ZIPs. */
   async listPublic(): Promise<
-    { id: string; name: string; slug: string; zipCodes: { zipCode: string; city: string | null; state: string | null }[] }[]
+    {
+      id: string;
+      name: string;
+      slug: string;
+      duration: string | null;
+      zipCodes: { zipCode: string; city: string | null; state: string | null }[];
+    }[]
   > {
     const rows = await areasRepository.listActiveWithZips();
     return rows.map((a) => ({
       id: a.id,
       name: a.name,
       slug: a.slug,
+      duration: a.duration,
       zipCodes: a.zipCodes.map((z) => ({ zipCode: z.zipCode, city: z.city, state: z.state })),
     }));
   }
@@ -91,6 +103,7 @@ export class AreasService {
       id: a.id,
       name: a.name,
       slug: a.slug,
+      duration: a.duration,
       status: a.status,
       deletedAt: a.deletedAt ? a.deletedAt.toISOString() : null,
       createdAt: a.createdAt.toISOString(),
