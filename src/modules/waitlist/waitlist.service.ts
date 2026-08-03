@@ -30,6 +30,8 @@ export class WaitlistService {
       const row = await waitlistRepository.create({
         email: dto.email,
         zip: dto.zip,
+        name: dto.name ?? null,
+        phone: dto.phone ?? null,
         source: dto.source,
       });
       return { signup: this.serialize(row), created: true };
@@ -50,6 +52,8 @@ export class WaitlistService {
       brand: row.brand.toLowerCase(),
       email: row.email,
       zip: row.zip,
+      name: row.name,
+      phone: row.phone,
       source: SOURCE_WIRE[row.source],
       created_at: row.createdAt.toISOString(),
     };
