@@ -21,6 +21,11 @@ export class AdminUsersController {
     const profile = await usersService.updateStaff(req.params.id, changes);
     sendSuccess(res, profile, "Staff updated");
   };
+
+  remove = async (req: Request, res: Response) => {
+    await usersService.softDeleteStaff(req.params.id);
+    sendSuccess(res, { id: req.params.id }, "Account removed");
+  };
 }
 
 export const adminUsersController = new AdminUsersController();

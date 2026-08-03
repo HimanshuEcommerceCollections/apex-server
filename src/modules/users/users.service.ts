@@ -168,18 +168,37 @@ export class UsersService {
     role: Role;
     phone?: string;
   }): Promise<UserProfile> {
-    const existing = await this.findByEmail(input.email);
-    if (existing) {
+    // Unfiltered on purpose: `email` is unique across soft-deleted rows too, so
+    // re-inviting an offboarded address has to revive that row rather than
+    // insert a second one and trip the unique constraint.
+    const existing = await usersRepository.findAnyByEmail(input.email.trim().toLowerCase());
+    if (existing && !existing.deletedAt) {
       throw ApiError.conflict("A user with this email already exists", { code: "EMAIL_TAKEN" });
     }
-    const user = await this.createUser({
-      email: input.email,
-      name: input.name,
-      phone: input.phone,
-      role: input.role,
-      status: UserStatus.INVITED,
-      passwordHash: null,
-    });
+
+    const user = existing
+      ? await usersRepository.update(existing.id, {
+          // Re-invite of a previously deleted account: reset it to a clean
+          // pending invite rather than resurrecting the old credentials.
+          deletedAt: null,
+          name: input.name,
+          phone: input.phone ?? null,
+          role: input.role,
+          status: UserStatus.INVITED,
+          passwordHash: null,
+          emailVerifiedAt: null,
+          failedLoginCount: 0,
+          lockedUntil: null,
+          tokenVersion: { increment: 1 },
+        })
+      : await this.createUser({
+          email: input.email,
+          name: input.name,
+          phone: input.phone,
+          role: input.role,
+          status: UserStatus.INVITED,
+          passwordHash: null,
+        });
     const raw = await this.createVerificationToken(user.id, TokenPurpose.STAFF_INVITE, STAFF_INVITE_TTL_MS);
     await emailService.sendInvite(user.email, raw, input.role === Role.ADMIN ? "admin" : "coordinator");
     return this.serialize(user);
@@ -202,6 +221,31 @@ export class UsersService {
     const updated = await usersRepository.update(id, data);
     if (changes.status === "SUSPENDED") await usersRepository.revokeAllRefreshForUser(id);
     return this.serialize(updated);
+  }
+
+  /**
+   * Soft-delete a staff account. Covers both cases the console offers: revoking
+   * a pending invite and offboarding an active member.
+   *
+   * The row stays — bookings, payments and assignments reference users with
+   * RESTRICT, so a hard delete would fail or orphan history — but the account
+   * is gone as far as the app is concerned: usersRepository filters deletedAt
+   * on every lookup, so it cannot sign in, resolve a session, redeem an
+   * outstanding invite token, or appear in the staff list.
+   *
+   * tokenVersion is bumped and refresh tokens revoked, the same as SUSPENDED,
+   * so anyone currently signed in is ejected immediately rather than lasting
+   * until their access token expires.
+   */
+  async softDeleteStaff(id: string): Promise<void> {
+    const target = await usersRepository.findById(id);
+    if (!target) throw ApiError.notFound("User not found", { code: "USER_NOT_FOUND" });
+
+    await usersRepository.softDelete(id, {
+      deletedAt: new Date(),
+      tokenVersion: { increment: 1 },
+    });
+    await usersRepository.revokeAllRefreshForUser(id);
   }
 
   serialize(user: User): UserProfile {

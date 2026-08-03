@@ -658,6 +658,12 @@ model User {
   phone            String?
   mfaSecret        String? // AES-256-GCM encrypted TOTP secret (staff)
   mfaEnabledAt     DateTime?
+  // Soft delete. Set = the account is gone as far as the app is concerned:
+  // every lookup in usersRepository filters it out, so it cannot sign in, hold
+  // a session, or appear in staff lists. Rows are kept because bookings,
+  // payments and assignments reference users with RESTRICT — a hard delete
+  // would either fail or orphan operational history.
+  deletedAt        DateTime?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
@@ -671,6 +677,7 @@ model User {
   crewMemberships     CrewMember[] // as a crew member
 
   @@index([role, status])
+  @@index([deletedAt])
 }
 
 model RefreshToken {

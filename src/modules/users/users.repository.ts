@@ -7,22 +7,41 @@ import type { Prisma } from "@prisma/client";
  */
 export class UsersRepository {
   // --- User ---
+  //
+  // Every read here excludes soft-deleted rows. This is the single choke point
+  // for it: resolveSession, login, refresh, forgot-password, token redemption
+  // and the staff list all reach the database through these three methods, so
+  // filtering here is what makes a deleted account genuinely unable to sign in
+  // rather than merely hidden in one listing.
   findById(id: string) {
-    return prisma.user.findUnique({ where: { id } });
+    return prisma.user.findFirst({ where: { id, deletedAt: null } });
   }
   findByEmail(email: string) {
-    return prisma.user.findUnique({ where: { email } });
+    return prisma.user.findFirst({ where: { email, deletedAt: null } });
   }
   findManyByRoles(roles: Prisma.EnumRoleFilter["in"]) {
     return prisma.user.findMany({
-      where: { role: { in: roles } },
+      where: { role: { in: roles }, deletedAt: null },
       orderBy: [{ createdAt: "desc" }],
     });
+  }
+  /**
+   * Deliberately UNFILTERED — the only read that sees soft-deleted rows.
+   * `email` is unique across deleted and live rows alike, so re-inviting an
+   * offboarded address has to find the old row to revive it rather than
+   * colliding with the unique constraint. Do not use this for auth.
+   */
+  findAnyByEmail(email: string) {
+    return prisma.user.findUnique({ where: { email } });
   }
   create(data: Prisma.UserUncheckedCreateInput) {
     return prisma.user.create({ data });
   }
   update(id: string, data: Prisma.UserUncheckedUpdateInput) {
+    return prisma.user.update({ where: { id }, data });
+  }
+  /** Soft delete — see the `deletedAt` note on the model. */
+  softDelete(id: string, data: Prisma.UserUncheckedUpdateInput) {
     return prisma.user.update({ where: { id }, data });
   }
 

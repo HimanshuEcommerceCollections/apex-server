@@ -36,3 +36,14 @@ adminUsersRouter.patch(
   validate({ params: staffIdParamSchema, body: updateStaffSchema }),
   asyncHandler(adminUsersController.update),
 );
+
+// Soft-delete an account — the console calls this both to revoke a pending
+// invite and to offboard an active member. The row is retained (operational
+// history references it) but every lookup filters it out, so the account can no
+// longer sign in or redeem an outstanding invite link.
+adminUsersRouter.delete(
+  "/:id",
+  authorize("user:manage"),
+  validate({ params: staffIdParamSchema }),
+  asyncHandler(adminUsersController.remove),
+);
