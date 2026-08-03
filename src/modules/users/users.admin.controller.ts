@@ -22,9 +22,9 @@ export class AdminUsersController {
     sendSuccess(res, profile, "Staff updated");
   };
 
-  revokeInvite = async (req: Request, res: Response) => {
-    await usersService.revokeInvite(req.params.id);
-    sendSuccess(res, { id: req.params.id }, "Invite revoked");
+  remove = async (req: Request, res: Response) => {
+    await usersService.softDeleteStaff(req.params.id);
+    sendSuccess(res, { id: req.params.id }, "Account removed");
   };
 }
 
