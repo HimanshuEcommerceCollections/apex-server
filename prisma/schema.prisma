@@ -491,10 +491,14 @@ model PMRequest {
 // ===========================================================================
 
 model WaitlistSignup {
-  id        String         @id @default(uuid())
-  brand     Brand          @default(APEX)
-  email     String
-  zip       String
+  id    String @id @default(uuid())
+  brand Brand  @default(APEX)
+  email String
+  zip   String
+  // Collected by the service-area waitlist form. Nullable because the other
+  // caller — the WAITLISTED arm of POST /bookings — only has email + zip.
+  name      String?
+  phone     String?
   source    WaitlistSource
   status    WaitlistStatus @default(ACTIVE)
   createdAt DateTime       @default(now())

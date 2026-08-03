@@ -9,6 +9,8 @@ export interface WaitlistSignupResponse {
   brand: string; // "apex"
   email: string;
   zip: string;
+  name: string | null;
+  phone: string | null;
   source: string; // "service-area-miss" | "service-area-page"
   created_at: string; // ISO-8601
 }
