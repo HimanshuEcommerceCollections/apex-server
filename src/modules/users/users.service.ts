@@ -204,6 +204,27 @@ export class UsersService {
     return this.serialize(updated);
   }
 
+  /**
+   * Revoke a pending staff invite: the account is removed and the outstanding
+   * STAFF_INVITE token dies with it (VerificationToken cascades), so the emailed
+   * link stops working immediately.
+   *
+   * Deliberately restricted to INVITED accounts. An ACTIVE or SUSPENDED staff
+   * member may already own bookings, quotes or crew rows whose foreign keys are
+   * RESTRICT — deleting them would either fail at the database or orphan
+   * operational history. Deactivating those is what SUSPENDED is for.
+   */
+  async revokeInvite(id: string): Promise<void> {
+    const target = await usersRepository.findById(id);
+    if (!target) throw ApiError.notFound("User not found", { code: "USER_NOT_FOUND" });
+    if (target.status !== UserStatus.INVITED) {
+      throw ApiError.conflict("Only a pending invite can be revoked. Suspend the account instead.", {
+        code: "INVITE_NOT_PENDING",
+      });
+    }
+    await usersRepository.delete(id);
+  }
+
   serialize(user: User): UserProfile {
     return {
       id: user.id,

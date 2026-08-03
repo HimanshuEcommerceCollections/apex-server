@@ -25,6 +25,11 @@ export class UsersRepository {
   update(id: string, data: Prisma.UserUncheckedUpdateInput) {
     return prisma.user.update({ where: { id }, data });
   }
+  /** Only ever called for a still-INVITED account — see usersService.revokeInvite.
+   *  VerificationToken and RefreshToken cascade on delete. */
+  delete(id: string) {
+    return prisma.user.delete({ where: { id } });
+  }
 
   // --- RefreshToken ---
   createRefreshToken(data: Prisma.RefreshTokenUncheckedCreateInput) {

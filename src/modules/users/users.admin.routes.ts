@@ -36,3 +36,12 @@ adminUsersRouter.patch(
   validate({ params: staffIdParamSchema, body: updateStaffSchema }),
   asyncHandler(adminUsersController.update),
 );
+
+// Revoke a pending invite. 409s for anything already ACTIVE/SUSPENDED — those
+// are deactivated via PATCH status, not deleted.
+adminUsersRouter.delete(
+  "/:id",
+  authorize("user:manage"),
+  validate({ params: staffIdParamSchema }),
+  asyncHandler(adminUsersController.revokeInvite),
+);

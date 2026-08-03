@@ -21,6 +21,11 @@ export class AdminUsersController {
     const profile = await usersService.updateStaff(req.params.id, changes);
     sendSuccess(res, profile, "Staff updated");
   };
+
+  revokeInvite = async (req: Request, res: Response) => {
+    await usersService.revokeInvite(req.params.id);
+    sendSuccess(res, { id: req.params.id }, "Invite revoked");
+  };
 }
 
 export const adminUsersController = new AdminUsersController();
