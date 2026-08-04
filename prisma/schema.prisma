@@ -40,8 +40,13 @@ enum Brand {
   APEX
 }
 
+// Two modes only. FROM is the binding pay-at-booking mode (basePrice is the
+// payable minimum; option deltas are >= 0 so total >= base by construction, and
+// fromPrice is the marketing "from $X" band). QUOTE runs the same engine for an
+// INDICATIVE figure, but the binding amount is always the coordinator's
+// QuoteRequest.quotedAmount. The former PRICED mode was FROM without the band —
+// its semantics live on in FROM (migration 20260804*_drop_priced_mode).
 enum PricingMode {
-  PRICED
   FROM
   QUOTE
 }

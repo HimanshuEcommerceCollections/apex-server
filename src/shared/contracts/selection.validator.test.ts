@@ -21,7 +21,7 @@ describe("validateSelections", () => {
     const v = validateSelections({
       selections: { "cleaning-type": "standard", frequency: "weekly" },
       groups: cleaningGroups,
-      pricingMode: "PRICED",
+      pricingMode: "FROM",
       strict: false,
     });
     expect(v).toEqual([]);
@@ -31,7 +31,7 @@ describe("validateSelections", () => {
     const v = validateSelections({
       selections: { nope: "x", "cleaning-type": "gold" },
       groups: cleaningGroups,
-      pricingMode: "PRICED",
+      pricingMode: "FROM",
       strict: false,
     });
     expect(codes(v)).toEqual(expect.arrayContaining(["UNKNOWN_SELECTION_GROUP", "UNKNOWN_OPTION_KEY"]));
@@ -41,7 +41,7 @@ describe("validateSelections", () => {
     const v = validateSelections({
       selections: { devices: [] },
       groups: smartGroups,
-      pricingMode: "PRICED",
+      pricingMode: "FROM",
       strict: false,
     });
     expect(codes(v)).toContain("SELECT_MIN");
@@ -61,13 +61,13 @@ describe("validateSelections", () => {
     const v = validateSelections({
       selections: { "cleaning-type": "standard" }, // frequency missing
       groups: cleaningGroups,
-      pricingMode: "PRICED",
+      pricingMode: "FROM",
       strict: true,
     });
     expect(codes(v)).toContain("MISSING_REQUIRED_SELECTION");
   });
 
-  it("strict: QUOTE demands a 10+ char description; PRICED forbids one", () => {
+  it("strict: QUOTE demands a 10+ char description; FROM forbids one", () => {
     expect(
       codes(validateSelections({ selections: {}, groups: paintingGroups, pricingMode: "QUOTE", strict: true, description: "short" })),
     ).toContain("QUOTE_DESCRIPTION_REQUIRED");
@@ -77,7 +77,7 @@ describe("validateSelections", () => {
         validateSelections({
           selections: { "cleaning-type": "standard", frequency: "weekly" },
           groups: cleaningGroups,
-          pricingMode: "PRICED",
+          pricingMode: "FROM",
           strict: true,
           description: "should not be here",
         }),
@@ -89,7 +89,7 @@ describe("validateSelections", () => {
     const v = validateSelections({
       selections: { "cleaning-type": "standard" },
       groups: cleaningGroups,
-      pricingMode: "PRICED",
+      pricingMode: "FROM",
       strict: false,
     });
     expect(v).toEqual([]);

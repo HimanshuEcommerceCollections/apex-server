@@ -62,6 +62,26 @@ class PricingService {
   }
 
   /**
+   * Best-effort INDICATIVE engine total for a stored configuration — the number a
+   * coordinator sees next to a quote request as a starting point. Never binding,
+   * never charged, and never throws: any failure (service missing, inactive,
+   * malformed selections) is null, because an unpriceable quote is still a
+   * perfectly workable quote.
+   */
+  async indicativeFor(
+    idOrSlug: string,
+    selections: PricePreviewInput["selections"],
+    quantity = 1,
+  ): Promise<DisplayedPrice | null> {
+    try {
+      const ctx = await this.buildContext(idOrSlug, { selections, quantity });
+      return getPricingModeHandler(ctx.service.pricingMode).preview(ctx).displayed_price;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Recompute a membership cycle's price from the member's stored configuration
    * against the latest published catalog (docs 07 §6.4). Used by the invoice.created
    * webhook to set each cycle's amount. Throws for non-billable (QUOTE) services.

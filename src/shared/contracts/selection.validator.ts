@@ -27,7 +27,7 @@ export const zipSchema = z.string().regex(/^\d{5}$/, "zip must be a 5-digit ZIP 
 // ---------------------------------------------------------------------------
 
 export type ConfigInput = "SELECT" | "MULTISELECT" | "QUANTITY" | "TOGGLE" | "TEXTAREA";
-export type PricingModeName = "PRICED" | "FROM" | "QUOTE";
+export type PricingModeName = "FROM" | "QUOTE";
 
 export interface GroupDescriptor {
   key: string;

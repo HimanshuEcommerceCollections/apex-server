@@ -17,7 +17,7 @@ export class PaymentsService {
     const booking = await bookingsRepository.findForCustomerByReference(reference, userId);
     if (!booking) throw ApiError.notFound("Booking not found", { code: "BOOKING_NOT_FOUND" });
 
-    // PRICED/FROM charge the recompute snapshot; QUOTE charges the coordinator's quotedAmount.
+    // FROM charges the recompute snapshot; QUOTE charges the coordinator's quotedAmount.
     const amount = booking.configuration?.priceTotal ?? booking.quote?.quotedAmount ?? null;
     if (amount == null) {
       throw ApiError.badRequest("This booking isn't priced yet", { code: "BOOKING_NOT_PRICED" });

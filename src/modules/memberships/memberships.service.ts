@@ -104,7 +104,7 @@ export class MembershipsService {
     const violations = validateSelections({
       selections: dto.selections,
       groups,
-      pricingMode: (cfg?.pricingMode ?? "PRICED") as PricingModeName,
+      pricingMode: (cfg?.pricingMode ?? "FROM") as PricingModeName,
       strict: true,
     });
     if (violations.length) throw ApiError.unprocessable("Invalid selections", { code: violations[0].code, violations });

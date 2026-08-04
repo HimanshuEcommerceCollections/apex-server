@@ -113,7 +113,7 @@ export const ServicePricingSchema = z.object({
   modifiers: z.array(ModifierSchema).default([]),
   fees: z.array(FeeSchema).default([]),
   rules: z.array(PricingRuleSchema).default([]),
-  mode: z.enum(["PRICED", "FROM", "QUOTE"]).default("PRICED"),
+  mode: z.enum(["FROM", "QUOTE"]).default("FROM"),
   from_price: MoneySchema.optional(),
 });
 export type ServicePricing = z.infer<typeof ServicePricingSchema>;

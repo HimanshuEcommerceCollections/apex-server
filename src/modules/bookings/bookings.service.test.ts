@@ -40,7 +40,7 @@ function codeOf(p: Promise<unknown>) {
 
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset());
-  m.findByIdOrSlug.mockResolvedValue({ id: "svc1", slug: "cleaning", status: "ACTIVE", pricingMode: "PRICED" });
+  m.findByIdOrSlug.mockResolvedValue({ id: "svc1", slug: "cleaning", status: "ACTIVE", pricingMode: "FROM" });
   m.findServiceWithConfig.mockResolvedValue({ configGroups: [] });
   m.findByClientRequestId.mockResolvedValue(null);
   m.recomputeForBooking.mockResolvedValue(priced);
@@ -79,7 +79,7 @@ describe("bookings.submit", () => {
   it("rejects unknown or non-active services", async () => {
     m.findByIdOrSlug.mockResolvedValue(null);
     expect(await codeOf(bookingsService.submit("c", baseDto as never))).toBe("SERVICE_NOT_FOUND");
-    m.findByIdOrSlug.mockResolvedValue({ id: "s", slug: "x", status: "DRAFT", pricingMode: "PRICED" });
+    m.findByIdOrSlug.mockResolvedValue({ id: "s", slug: "x", status: "DRAFT", pricingMode: "FROM" });
     expect(await codeOf(bookingsService.submit("c", baseDto as never))).toBe("SERVICE_NOT_BOOKABLE");
   });
 });

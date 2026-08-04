@@ -2,7 +2,13 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db/client";
 
 const include = {
-  booking: { select: { reference: true } },
+  // configuration feeds the coordinator's indicative engine price (quotes.service).
+  booking: {
+    select: {
+      reference: true,
+      configuration: { select: { selections: true, quantity: true } },
+    },
+  },
   service: { select: { slug: true, name: true } },
 } as const;
 
