@@ -11,7 +11,6 @@ export type ServiceForEdit = Prisma.ServiceGetPayload<{ include: typeof editIncl
 export interface PricingUpdate {
   pricingMode?: "FROM" | "QUOTE";
   basePrice?: number;
-  fromPrice?: number | null;
   typicalDuration?: string | null;
   recurringDiscount?: string | null;
   options?: { id: string; priceDelta: number }[];
@@ -39,7 +38,7 @@ const recurringRef = {
 export type ServiceRecurringRef = Prisma.ServiceGetPayload<{ select: typeof recurringRef }>;
 
 /**
- * Runtime writer of catalog PRICING fields (Service.basePrice/fromPrice,
+ * Runtime writer of catalog PRICING fields (Service.pricingMode/basePrice,
  * ServiceConfigOption.priceDelta, ServicePricingRule.effect.value). Reads ALL
  * rows (any status) for the admin editor. The pricing engine reads these live,
  * so a committed change is reflected on the next recompute (docs 07 §7).
@@ -92,7 +91,6 @@ export class CatalogRepository {
       if (
         changes.pricingMode != null ||
         changes.basePrice != null ||
-        changes.fromPrice !== undefined ||
         changes.typicalDuration !== undefined ||
         changes.recurringDiscount !== undefined
       ) {
@@ -101,7 +99,6 @@ export class CatalogRepository {
           data: {
             ...(changes.pricingMode != null ? { pricingMode: changes.pricingMode } : {}),
             ...(changes.basePrice != null ? { basePrice: changes.basePrice } : {}),
-            ...(changes.fromPrice !== undefined ? { fromPrice: changes.fromPrice } : {}),
             ...(changes.typicalDuration !== undefined ? { typicalDuration: changes.typicalDuration || null } : {}),
             ...(changes.recurringDiscount !== undefined ? { recurringDiscount: changes.recurringDiscount || null } : {}),
           },

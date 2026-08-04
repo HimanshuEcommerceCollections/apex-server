@@ -40,12 +40,14 @@ enum Brand {
   APEX
 }
 
-// Two modes only. FROM is the binding pay-at-booking mode (basePrice is the
-// payable minimum; option deltas are >= 0 so total >= base by construction, and
-// fromPrice is the marketing "from $X" band). QUOTE runs the same engine for an
-// INDICATIVE figure, but the binding amount is always the coordinator's
-// QuoteRequest.quotedAmount. The former PRICED mode was FROM without the band —
-// its semantics live on in FROM (migration 20260804*_drop_priced_mode).
+// Two modes only. FROM is the binding pay-at-booking mode: basePrice is the
+// payable minimum AND the "from $X" the site lists (option deltas are >= 0, so
+// total >= base by construction — the listed price is honest by construction).
+// QUOTE runs the same engine for an INDICATIVE figure, but the binding amount is
+// always the coordinator's QuoteRequest.quotedAmount. The former PRICED mode was
+// FROM without the band — its semantics live on in FROM (migration
+// 20260804*_drop_priced_mode); the former display-only fromPrice teaser was
+// folded into basePrice (migration 20260805*_base_price_is_from_price).
 enum PricingMode {
   FROM
   QUOTE
@@ -260,8 +262,7 @@ model Service {
   description         String?
   pricingMode         PricingMode
   pricingRef          String
-  basePrice           Int // cents; engine base. 0 for every MVP service.
-  fromPrice           Int? // cents; DISPLAY-ONLY "From $X" band. Never summed.
+  basePrice           Int // cents; engine base AND the listed "from $X" (the payable minimum). 0 = no from-price shown.
   currency            String        @default("USD")
   status              ServiceStatus @default(DRAFT)
   badges              String[]      @default([])

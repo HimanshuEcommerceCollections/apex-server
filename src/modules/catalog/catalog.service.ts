@@ -130,7 +130,6 @@ export class CatalogService {
     return {
       pricingMode: svc.pricingMode,
       basePrice: svc.basePrice,
-      fromPrice: svc.fromPrice,
       options: svc.configGroups.flatMap((g) => g.options.map((o) => ({ id: o.id, priceDelta: o.priceDelta }))),
       rules: svc.pricingRules.map((r) => ({ id: r.id, effect: r.effect })),
     };
@@ -143,7 +142,6 @@ export class CatalogService {
       name: svc.name,
       pricingMode: svc.pricingMode,
       basePrice: svc.basePrice,
-      fromPrice: svc.fromPrice,
       currency: svc.currency,
       typicalDuration: svc.typicalDuration,
       recurringDiscount: svc.recurringDiscount,

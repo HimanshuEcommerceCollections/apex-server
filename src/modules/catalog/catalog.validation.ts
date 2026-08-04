@@ -9,8 +9,8 @@ export const updatePricingSchema = z
     // FROM = binding, paid at booking; QUOTE = coordinator sets the final amount
     // (the engine total is indicative). Switching mode changes how /book charges.
     pricingMode: z.enum(["FROM", "QUOTE"]).optional(),
+    // basePrice is the payable minimum AND the listed "from $X" (0 = none shown).
     basePrice: z.coerce.number().int().min(0).max(MAX_CENTS).optional(),
-    fromPrice: z.coerce.number().int().min(0).max(MAX_CENTS).nullable().optional(),
     typicalDuration: z.string().trim().max(40).nullable().optional(),
     recurringDiscount: z.string().trim().max(40).nullable().optional(),
     options: z

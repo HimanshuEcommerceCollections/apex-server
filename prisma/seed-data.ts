@@ -42,8 +42,11 @@ export interface SeedService {
   description: string;
   categorySlug: string;
   mode: "FROM" | "QUOTE";
-  basePrice?: number; // cents; engine base × quantity (default 0). >0 for hourly services (handyman).
-  fromPrice?: number;
+  // cents; the engine base (× quantity) AND the listed "from $X" — the payable
+  // minimum. Deltas below are tuned so the cheapest required configuration costs
+  // exactly this (cheapest option of every required group = 0). Default 0 = the
+  // service lists no from-price.
+  basePrice?: number;
   isRecurringEligible?: boolean;
   badges?: string[];
   claimsBlock?: string;
@@ -147,15 +150,17 @@ export const RECURRING_PLANS: Record<string, SeedRecurringSection> = {
   "tree-stump": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$199") },
 };
 
+// Deltas are increments over the 1-bed/1-bath baseline (already in basePrice),
+// so the cheapest configuration prices at exactly the listed base.
 const bedroomsOptions: SeedOption[] = [1, 2, 3, 4, 5].map((n) => ({
   key: String(n),
   label: `${n} bedroom${n > 1 ? "s" : ""}`,
-  delta: n * 2500,
+  delta: (n - 1) * 2500,
 }));
 const bathroomsOptions: SeedOption[] = [1, 2, 3, 4].map((n) => ({
   key: String(n),
   label: `${n} bathroom${n > 1 ? "s" : ""}`,
-  delta: n * 1500,
+  delta: (n - 1) * 1500,
 }));
 
 export const SERVICES: SeedService[] = [
@@ -167,7 +172,7 @@ export const SERVICES: SeedService[] = [
     categorySlug: "recurring-core",
     mode: "FROM",
     isRecurringEligible: true,
-    fromPrice: 14900, // marketing "from $149" teaser (admin-editable); real price is configurator-driven
+    basePrice: 14900, // "from $149": a 1-bed/1-bath standard clean costs exactly this
     badges: ["Background-checked pros", "Supplies included"],
     groups: [
       {
@@ -177,9 +182,9 @@ export const SERVICES: SeedService[] = [
         uiHint: "matrix-axis",
         isRequired: true,
         options: [
-          { key: "standard", label: "Standard", delta: 9500 },
-          { key: "deep", label: "Deep Clean", delta: 14500 },
-          { key: "move-in-out", label: "Move In/Out", delta: 19500 },
+          { key: "standard", label: "Standard", delta: 0 },
+          { key: "deep", label: "Deep Clean", delta: 5000 },
+          { key: "move-in-out", label: "Move In/Out", delta: 10000 },
         ],
       },
       { key: "bedrooms", label: "Bedrooms", inputType: "SELECT", uiHint: "matrix-axis", isRequired: true, options: bedroomsOptions },
@@ -212,7 +217,7 @@ export const SERVICES: SeedService[] = [
     categorySlug: "recurring-core",
     mode: "FROM",
     isRecurringEligible: true,
-    fromPrice: 7900, // marketing "from $79" teaser
+    basePrice: 7900, // "from $79": a small-yard mow & edge costs exactly this
     badges: ["Same crew each visit"],
     groups: [
       {
@@ -221,10 +226,10 @@ export const SERVICES: SeedService[] = [
         inputType: "SELECT",
         isRequired: true,
         options: [
-          { key: "small", label: "Small yard", sublabel: "Up to 1/4 acre", delta: 4500 },
-          { key: "medium", label: "Medium yard", sublabel: "1/4 to 1/2 acre", delta: 6500 },
-          { key: "large", label: "Large yard", sublabel: "1/2 to 1 acre", delta: 9000 },
-          { key: "xlarge", label: "Extra large yard", sublabel: "1+ acre", delta: 13000 },
+          { key: "small", label: "Small yard", sublabel: "Up to 1/4 acre", delta: 0 },
+          { key: "medium", label: "Medium yard", sublabel: "1/4 to 1/2 acre", delta: 2000 },
+          { key: "large", label: "Large yard", sublabel: "1/2 to 1 acre", delta: 4500 },
+          { key: "xlarge", label: "Extra large yard", sublabel: "1+ acre", delta: 8500 },
         ],
       },
       {
@@ -263,7 +268,7 @@ export const SERVICES: SeedService[] = [
     categorySlug: "recurring-core",
     mode: "FROM",
     isRecurringEligible: true,
-    fromPrice: 9900, // marketing "from $99" teaser
+    basePrice: 9900, // "from $99": a weekly standard clean costs exactly this per visit
     groups: [
       {
         key: "frequency",
@@ -272,10 +277,10 @@ export const SERVICES: SeedService[] = [
         uiHint: "frequency",
         isRequired: true,
         options: [
-          { key: "one-time", label: "One-time", delta: 14900 },
-          { key: "weekly", label: "Weekly", delta: 11900 },
-          { key: "biweekly", label: "Every two weeks", delta: 12900 },
-          { key: "monthly", label: "Monthly", delta: 13900 },
+          { key: "one-time", label: "One-time", delta: 3000 },
+          { key: "weekly", label: "Weekly", delta: 0 },
+          { key: "biweekly", label: "Every two weeks", delta: 1000 },
+          { key: "monthly", label: "Monthly", delta: 2000 },
         ],
       },
       {
@@ -299,7 +304,7 @@ export const SERVICES: SeedService[] = [
     categorySlug: "recurring-core",
     mode: "FROM",
     isRecurringEligible: true,
-    fromPrice: 8900, // marketing "from $89" teaser
+    basePrice: 8900, // "from $89": a general apartment treatment costs exactly this
     claimsBlock: "NC pesticide-application licensing expectations are collected from pros and shown for transparency; Apex does not itself hold the license.",
     groups: [
       {
@@ -308,9 +313,9 @@ export const SERVICES: SeedService[] = [
         inputType: "SELECT",
         isRequired: true,
         options: [
-          { key: "apt", label: "Apartment", delta: 6900 },
-          { key: "house", label: "House", delta: 8900 },
-          { key: "large", label: "Large home", delta: 11900 },
+          { key: "apt", label: "Apartment", delta: 0 },
+          { key: "house", label: "House", delta: 2000 },
+          { key: "large", label: "Large home", delta: 5000 },
         ],
       },
       {
@@ -387,7 +392,7 @@ export const SERVICES: SeedService[] = [
     description: "Fence, driveway, deck, and siding cleaning. Priced from, with a pro walkthrough.",
     categorySlug: "one-time",
     mode: "FROM",
-    fromPrice: 19900, // marketing "from $199"
+    basePrice: 19900, // "from $199": walkways-only costs exactly this (selectMin 1 makes one surface unavoidable)
     groups: [
       {
         key: "surfaces",
@@ -396,12 +401,12 @@ export const SERVICES: SeedService[] = [
         isRequired: true,
         selectMin: 1,
         options: [
-          { key: "drive", label: "Driveway", delta: 9900 },
-          { key: "siding", label: "House siding", delta: 14900 },
-          { key: "deck", label: "Deck / patio", delta: 11900 },
-          { key: "fence", label: "Fence", delta: 8900 },
-          { key: "roof", label: "Roof / gutters", delta: 19900 },
-          { key: "walk", label: "Walkways", delta: 7900 },
+          { key: "drive", label: "Driveway", delta: 2000 },
+          { key: "siding", label: "House siding", delta: 7000 },
+          { key: "deck", label: "Deck / patio", delta: 4000 },
+          { key: "fence", label: "Fence", delta: 1000 },
+          { key: "roof", label: "Roof / gutters", delta: 12000 },
+          { key: "walk", label: "Walkways", delta: 0 },
         ],
       },
     ],
@@ -414,8 +419,10 @@ export const SERVICES: SeedService[] = [
     description: "From small repairs to fixture installs and TV mounting.",
     categorySlug: "one-time",
     mode: "FROM",
-    basePrice: 9500, // $95/hr; engine multiplies by quantity = estimated hours
-    fromPrice: 15000, // marketing "from $150" (compare table)
+    // $95/hr; engine multiplies by quantity = estimated hours. Deliberately NOT
+    // set from the old $150 compare-table teaser: this base carries engine
+    // meaning, so the site now lists "from $95" (one honest hour).
+    basePrice: 9500,
     groups: [
       {
         key: "kind",
