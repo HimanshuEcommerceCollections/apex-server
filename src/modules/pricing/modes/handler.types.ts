@@ -7,7 +7,7 @@ export interface PricingServiceMeta {
   slug: string;
   pricingRef: string;
   pricingMode: PricingMode;
-  fromPrice: number | null; // integer cents; display band only, NEVER a math input
+  basePrice: number; // integer cents; the payable minimum AND the listed "from $X" (0 = none shown)
   currency: string;
 }
 
@@ -21,7 +21,7 @@ export interface PricingModeContext {
 export interface PricePreview {
   mode: PricingMode;
   displayed_price: DisplayedPrice | null; // null iff mode === QUOTE
-  from_price: Money | null; // non-null iff mode === FROM
+  from_price: Money | null; // FROM only; basePrice when > 0 (the listed minimum), else null
   is_from_band: boolean; // true iff mode === FROM
   requires_description: boolean; // true iff mode === QUOTE
   requires_pro_confirmation: boolean; // true for FROM and QUOTE

@@ -47,7 +47,7 @@ describe("quoteHandler.recompute", () => {
       slug: "painting",
       pricingRef: "painting",
       pricingMode: PricingMode.QUOTE,
-      fromPrice: null,
+      basePrice: 0,
       currency: "USD",
     },
     table: PricingTableSchema.parse({ version: "v", currency: "USD", services: {} }),

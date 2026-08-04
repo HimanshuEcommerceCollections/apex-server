@@ -6,9 +6,9 @@ import type { PricePreview, PricingModeContext, PricingModeHandler } from "./han
 /**
  * FROM — the binding pay-at-booking mode (it absorbed the former PRICED mode's
  * semantics when PricingMode collapsed to two values). The engine total IS the
- * amount the customer pays when the booking is created; basePrice is the payable
- * minimum (option deltas are >= 0, so total >= base by construction), and
- * Service.fromPrice is the marketing "from $X" display band — never a math input.
+ * amount the customer pays when the booking is created, and basePrice is BOTH
+ * the payable minimum and the "from $X" the site lists — one number, honest by
+ * construction (option deltas are >= 0, so total >= base always).
  */
 class FromHandler implements PricingModeHandler {
   readonly mode = PricingMode.FROM;
@@ -16,9 +16,10 @@ class FromHandler implements PricingModeHandler {
   preview = (ctx: PricingModeContext): PricePreview => ({
     mode: this.mode,
     displayed_price: computePrice(ctx.table, ctx.configuration),
+    // The listed minimum; a 0 base means the service lists no from-price.
     from_price:
-      ctx.service.fromPrice != null
-        ? { amount: ctx.service.fromPrice, currency: ctx.service.currency }
+      ctx.service.basePrice > 0
+        ? { amount: ctx.service.basePrice, currency: ctx.service.currency }
         : null,
     is_from_band: true,
     requires_description: false,

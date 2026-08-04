@@ -6,7 +6,7 @@ export interface ServiceListItem {
   slug: string;
   summary: string | null;
   pricingMode: PricingMode;
-  fromPrice: number | null;
+  fromPrice: number | null; // basePrice when > 0 (wire name kept); the listed "from $X" minimum
   currency: string;
   badges: string[];
   isRecurringEligible: boolean;

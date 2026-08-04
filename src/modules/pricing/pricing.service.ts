@@ -121,7 +121,7 @@ class PricingService {
         slug: service.slug,
         pricingRef: service.pricingRef,
         pricingMode: service.pricingMode,
-        fromPrice: service.fromPrice,
+        basePrice: service.basePrice,
         currency: service.currency,
       },
       table: buildPricingTable(service),

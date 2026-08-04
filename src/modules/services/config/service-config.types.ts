@@ -46,7 +46,7 @@ export interface ServiceConfigResponse {
   pricingMode: PricingMode;
   pricingRef: string;
   basePrice: number;
-  fromPrice: number | null;
+  fromPrice: number | null; // basePrice when > 0 (wire name kept); the listed "from $X" minimum
   currency: string;
   badges: string[];
   claimsBlock: string | null;

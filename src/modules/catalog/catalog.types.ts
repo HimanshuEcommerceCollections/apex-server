@@ -44,7 +44,6 @@ export interface ServiceEditView {
   name: string;
   pricingMode: PricingMode;
   basePrice: number;
-  fromPrice: number | null;
   currency: string;
   typicalDuration: string | null;
   recurringDiscount: string | null;

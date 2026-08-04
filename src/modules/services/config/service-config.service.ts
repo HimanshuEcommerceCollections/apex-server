@@ -105,7 +105,8 @@ export class ServiceConfigService {
       pricingMode: service.pricingMode,
       pricingRef: service.pricingRef,
       basePrice: service.basePrice,
-      fromPrice: service.fromPrice,
+      // Wire name kept; sourced from basePrice (0 base = no from-price listed).
+      fromPrice: service.basePrice > 0 ? service.basePrice : null,
       currency: service.currency,
       badges: service.badges,
       claimsBlock: service.claimsBlock,

@@ -27,7 +27,10 @@ export class ServicesService {
       slug: r.slug,
       summary: r.summary,
       pricingMode: r.pricingMode,
-      fromPrice: r.fromPrice,
+      // Wire name kept for every consumer; the value is now basePrice — the one
+      // number that is both the payable minimum and the listed "from $X". A 0
+      // base means the service lists no from-price.
+      fromPrice: r.basePrice > 0 ? r.basePrice : null,
       currency: r.currency,
       badges: r.badges,
       isRecurringEligible: r.isRecurringEligible,
