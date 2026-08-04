@@ -1,6 +1,5 @@
 import { PricingMode } from "../../../enums";
 import type { PricingModeHandler } from "./handler.types";
-import { pricedHandler } from "./priced.handler";
 import { fromHandler } from "./from.handler";
 import { quoteHandler } from "./quote.handler";
 
@@ -10,7 +9,6 @@ import { quoteHandler } from "./quote.handler";
  * enum makes this file fail `npm run typecheck` until a handler is registered.
  */
 const handlers: Record<PricingMode, PricingModeHandler> = {
-  [PricingMode.PRICED]: pricedHandler,
   [PricingMode.FROM]: fromHandler,
   [PricingMode.QUOTE]: quoteHandler,
 };

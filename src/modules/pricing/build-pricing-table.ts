@@ -65,7 +65,9 @@ export function buildPricingTable(service: ServiceWithPricingRows): PricingTable
     modifiers,
     fees: [],
     rules,
-    mode: "PRICED",
+    // Seed-only field (the engine never consults it); the mode that matters is
+    // Service.pricingMode, dispatched in modes/registry.ts.
+    mode: "FROM",
   };
 
   return {

@@ -6,6 +6,9 @@ export const catalogServiceParamSchema = z.object({ idOrSlug: z.string().min(1) 
 
 export const updatePricingSchema = z
   .object({
+    // FROM = binding, paid at booking; QUOTE = coordinator sets the final amount
+    // (the engine total is indicative). Switching mode changes how /book charges.
+    pricingMode: z.enum(["FROM", "QUOTE"]).optional(),
     basePrice: z.coerce.number().int().min(0).max(MAX_CENTS).optional(),
     fromPrice: z.coerce.number().int().min(0).max(MAX_CENTS).nullable().optional(),
     typicalDuration: z.string().trim().max(40).nullable().optional(),

@@ -128,6 +128,7 @@ export class CatalogService {
 
   private snapshot(svc: ServiceForEdit) {
     return {
+      pricingMode: svc.pricingMode,
       basePrice: svc.basePrice,
       fromPrice: svc.fromPrice,
       options: svc.configGroups.flatMap((g) => g.options.map((o) => ({ id: o.id, priceDelta: o.priceDelta }))),

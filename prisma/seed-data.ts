@@ -41,7 +41,7 @@ export interface SeedService {
   summary: string;
   description: string;
   categorySlug: string;
-  mode: "PRICED" | "FROM" | "QUOTE";
+  mode: "FROM" | "QUOTE";
   basePrice?: number; // cents; engine base × quantity (default 0). >0 for hourly services (handyman).
   fromPrice?: number;
   isRecurringEligible?: boolean;
@@ -165,7 +165,7 @@ export const SERVICES: SeedService[] = [
     summary: "Recurring or one-time cleaning, priced by beds, baths, and clean type.",
     description: "Professional home cleaning across Wake County — standard, deep, and move in/out cleans.",
     categorySlug: "recurring-core",
-    mode: "PRICED",
+    mode: "FROM",
     isRecurringEligible: true,
     fromPrice: 14900, // marketing "from $149" teaser (admin-editable); real price is configurator-driven
     badges: ["Background-checked pros", "Supplies included"],
@@ -210,7 +210,7 @@ export const SERVICES: SeedService[] = [
     summary: "Mow, edge, trim & blow — priced by lot size.",
     description: "Reliable recurring lawn care with the same crew each visit.",
     categorySlug: "recurring-core",
-    mode: "PRICED",
+    mode: "FROM",
     isRecurringEligible: true,
     fromPrice: 7900, // marketing "from $79" teaser
     badges: ["Same crew each visit"],
@@ -261,7 +261,7 @@ export const SERVICES: SeedService[] = [
     summary: "Skim, vacuum, brush & balance — priced by pool size and cadence.",
     description: "Weekly, bi-weekly, or monthly pool maintenance with equipment health checks.",
     categorySlug: "recurring-core",
-    mode: "PRICED",
+    mode: "FROM",
     isRecurringEligible: true,
     fromPrice: 9900, // marketing "from $99" teaser
     groups: [
@@ -297,7 +297,7 @@ export const SERVICES: SeedService[] = [
     summary: "Protection plans for common household pests.",
     description: "One-time or recurring pest treatment. Final plan confirmed by a licensed pro.",
     categorySlug: "recurring-core",
-    mode: "PRICED",
+    mode: "FROM",
     isRecurringEligible: true,
     fromPrice: 8900, // marketing "from $89" teaser
     claimsBlock: "NC pesticide-application licensing expectations are collected from pros and shown for transparency; Apex does not itself hold the license.",
@@ -333,7 +333,7 @@ export const SERVICES: SeedService[] = [
     summary: "Haul-away priced by how full the truck gets.",
     description: "From a few items to a whole-home cleanout.",
     categorySlug: "one-time",
-    mode: "PRICED",
+    mode: "FROM",
     groups: [
       {
         key: "load-size",
@@ -357,7 +357,7 @@ export const SERVICES: SeedService[] = [
     summary: "Install and set up your smart devices; bundle 3+ and save.",
     description: "Professional installation of smart plugs, cameras, thermostats, locks, and more.",
     categorySlug: "specialty",
-    mode: "PRICED",
+    mode: "FROM",
     groups: [
       {
         key: "devices",

@@ -9,6 +9,7 @@ const editInclude = {
 export type ServiceForEdit = Prisma.ServiceGetPayload<{ include: typeof editInclude }>;
 
 export interface PricingUpdate {
+  pricingMode?: "FROM" | "QUOTE";
   basePrice?: number;
   fromPrice?: number | null;
   typicalDuration?: string | null;
@@ -89,6 +90,7 @@ export class CatalogRepository {
   ): Promise<void> {
     await prisma.$transaction(async (tx) => {
       if (
+        changes.pricingMode != null ||
         changes.basePrice != null ||
         changes.fromPrice !== undefined ||
         changes.typicalDuration !== undefined ||
@@ -97,6 +99,7 @@ export class CatalogRepository {
         await tx.service.update({
           where: { id: serviceId },
           data: {
+            ...(changes.pricingMode != null ? { pricingMode: changes.pricingMode } : {}),
             ...(changes.basePrice != null ? { basePrice: changes.basePrice } : {}),
             ...(changes.fromPrice !== undefined ? { fromPrice: changes.fromPrice } : {}),
             ...(changes.typicalDuration !== undefined ? { typicalDuration: changes.typicalDuration || null } : {}),
