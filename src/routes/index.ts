@@ -13,11 +13,7 @@ import { pmRequestsRouter, adminPmRequestsRouter } from "../modules/pm-requests"
 import { proApplicationsRouter, adminProApplicationsRouter } from "../modules/pro-applications";
 import { adminCatalogRouter } from "../modules/catalog";
 import { paymentsRouter, adminPaymentsRouter } from "../modules/payments";
-import {
-  membershipRouter,
-  meMembershipsRouter,
-  adminMembershipPlansRouter,
-} from "../modules/memberships";
+import { membershipRouter, meMembershipsRouter } from "../modules/memberships";
 import { authenticate } from "../middleware/auth";
 
 /** API v1 router — aggregates every mounted feature module under /api/v1. */
@@ -52,7 +48,6 @@ adminRouter.use("/pm-requests", adminPmRequestsRouter);
 adminRouter.use("/pro-applications", adminProApplicationsRouter);
 adminRouter.use("/catalog", adminCatalogRouter);
 adminRouter.use("/payments", adminPaymentsRouter);
-adminRouter.use("/membership-plans", adminMembershipPlansRouter);
 apiRouter.use("/admin", adminRouter);
 
 // Mounted as their modules land (roadmap 07 §11):

@@ -14,7 +14,6 @@ const m = vi.hoisted(() => ({
   findMembershipBySubscription: vi.fn(),
   listMembershipsByUser: vi.fn(),
   // cross-module
-  recompute: vi.fn(),
   paymentCreate: vi.fn(),
   createSubscriptionVisit: vi.fn(),
   getUser: vi.fn(),
@@ -45,7 +44,6 @@ vi.mock("./memberships.repository", () => ({
     listMembershipsByUser: m.listMembershipsByUser,
   },
 }));
-vi.mock("../pricing", () => ({ pricingService: { recomputeForMembership: m.recompute } }));
 vi.mock("../bookings", () => ({ bookingsRepository: { createSubscriptionVisit: m.createSubscriptionVisit } }));
 vi.mock("../users", () => ({
   usersService: { getById: m.getUser },
@@ -69,18 +67,17 @@ beforeEach(() => {
   m.updateMembership.mockResolvedValue({});
 });
 
-describe("handleSubscriptionEvent — per-cycle recompute + fulfilment", () => {
-  it("invoice.created: recomputes the current price and adds it as an invoice item", async () => {
+describe("handleSubscriptionEvent — binding plan price + fulfilment", () => {
+  it("invoice.created: bills exactly the plan's binding price as the cycle's invoice item", async () => {
     m.findMembershipBySubscription.mockResolvedValue({
-      id: "mem1", serviceId: "svc1", userId: "u1", lastAmount: 12000, configuration: config,
+      id: "mem1", serviceId: "svc1", userId: "u1", lastAmount: 12000, currency: "USD", configuration: config,
+      plan: { id: "plan1", name: "Weekly Lawn Care", price: 15000 },
     });
-    m.recompute.mockResolvedValue({ amount: 15000, currency: "USD" });
 
     await membershipsService.handleSubscriptionEvent(
       evt("invoice.created", { id: "in_1", customer: "cus_1", subscription: "sub_1" }),
     );
 
-    expect(m.recompute).toHaveBeenCalledWith("svc1", config.selections, 1);
     expect(m.invoiceItemsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ customer: "cus_1", invoice: "in_1", amount: 15000, currency: "usd" }),
       expect.objectContaining({ idempotencyKey: "apex_invitem_in_1" }),

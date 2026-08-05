@@ -1,14 +1,20 @@
-import type { MembershipInterval, MembershipStatus } from "../../enums";
+import type { CadenceInterval, MembershipStatus } from "../../enums";
 
+/**
+ * Public membership-plans wire — field names kept from the MembershipPlan era so
+ * the marketing /membership-plans page keeps working: `fromPrice` carries the
+ * plan's BINDING per-cycle price (no longer a display teaser).
+ */
 export interface PlanView {
   id: string;
-  key: string;
+  key: string; // plan id (the old MembershipPlan.key column is gone)
   name: string;
   description: string | null;
-  interval: MembershipInterval;
+  interval: CadenceInterval;
   intervalCount: number;
-  fromPrice: number | null;
+  fromPrice: number; // cents; the BINDING per-cycle amount (wire name kept)
   currency: string;
+  bullets: string[]; // up to 4 admin-written feature points
   active: boolean;
   service: { slug: string; name: string } | null;
 }
@@ -16,7 +22,7 @@ export interface PlanView {
 export interface MembershipView {
   id: string;
   status: MembershipStatus;
-  plan: { key: string; name: string } | null;
+  plan: { id: string; name: string } | null;
   service: { slug: string; name: string } | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;

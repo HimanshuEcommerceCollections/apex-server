@@ -53,25 +53,8 @@ export const CATEGORIES = [
   { slug: "specialty", name: "Specialty & quote", sortOrder: 2 },
 ];
 
-// Display-only membership plans (marketing catalog cards). No Stripe IDs yet — they
-// drive the /membership-plans pricing but can't be subscribed to until Stripe is
-// configured and the plans are wired (admin createPlan). fromPrice is the member
-// "from $X / visit" teaser (admin-editable).
-export interface SeedMembershipPlan {
-  key: string;
-  name: string;
-  serviceSlug: string;
-  interval: "WEEK" | "MONTH";
-  intervalCount: number;
-  fromPrice: number; // cents
-}
-
-export const MEMBERSHIP_PLANS: SeedMembershipPlan[] = [
-  { key: "cleaning", name: "Home Cleaning", serviceSlug: "cleaning", interval: "WEEK", intervalCount: 2, fromPrice: 14900 },
-  { key: "lawn-care", name: "Lawn Care", serviceSlug: "lawn-care", interval: "WEEK", intervalCount: 1, fromPrice: 5300 },
-  { key: "pool", name: "Pool Service", serviceSlug: "pool", interval: "WEEK", intervalCount: 1, fromPrice: 11900 },
-  { key: "power-washing", name: "Power Washing", serviceSlug: "power-washing", interval: "MONTH", intervalCount: 3, fromPrice: 7900 },
-];
+// MembershipPlan merged into ServicePlan — SEED_PLANS below is the one plan
+// catalog (the /membership-plans page renders from it).
 
 // Display labels for the pricing Compare table (admin-editable). The
 // "Recurring discount up to X%" label is DERIVED from SEED_RECURRING now.
@@ -103,6 +86,7 @@ export const SEED_CADENCES: SeedCadence[] = [
   { key: "weekly", label: "Weekly", interval: "WEEK", intervalCount: 1 },
   { key: "biweekly", label: "Every two weeks", interval: "WEEK", intervalCount: 2 },
   { key: "monthly", label: "Monthly", interval: "MONTH", intervalCount: 1 },
+  { key: "quarterly", label: "Every 3 months", interval: "MONTH", intervalCount: 3 },
 ];
 
 /**
@@ -132,49 +116,40 @@ export interface SeedPlan {
   featured?: boolean;
 }
 
+// The four /membership-plans page cards, bullets verbatim from the design —
+// prices are BINDING per-cycle amounts (the old teasers, admin-tunable).
 export const SEED_PLANS: SeedPlan[] = [
   {
     serviceSlug: "cleaning",
-    cadenceKey: "weekly",
-    name: "Weekly Clean",
-    bullets: ["Standard clean, every week", "Same vetted cleaner", "Supplies included", "Priority scheduling"],
-    price: 13300,
-    priceType: "PER_VISIT",
-    featured: true,
-  },
-  {
-    serviceSlug: "cleaning",
     cadenceKey: "biweekly",
-    name: "Biweekly Clean",
-    bullets: ["Standard clean, every two weeks", "Same vetted cleaner", "Supplies included"],
-    price: 14500,
+    name: "Home Cleaning",
+    bullets: ["Same trusted 2-person team", "Kitchen, baths & all rooms", "Free re-clean guarantee", "Supplies included"],
+    price: 14900,
     priceType: "PER_VISIT",
   },
   {
     serviceSlug: "lawn-care",
     cadenceKey: "weekly",
-    name: "Weekly Lawn Care",
+    name: "Lawn Care",
     bullets: ["Mow, edge, trim & blow", "Seasonal height adjustments", "Priority weather rescheduling", "Same crew each visit"],
     price: 5300,
-    priceType: "PER_VISIT",
-    featured: true,
-  },
-  {
-    serviceSlug: "lawn-care",
-    cadenceKey: "biweekly",
-    name: "Biweekly Lawn Care",
-    bullets: ["Mow, edge, trim & blow", "Seasonal height adjustments", "Same crew each visit"],
-    price: 5600,
     priceType: "PER_VISIT",
   },
   {
     serviceSlug: "pool",
     cadenceKey: "weekly",
-    name: "Weekly Pool Care",
-    bullets: ["Skim, vacuum & brush", "Chemical balancing", "Equipment health check", "Same tech each visit"],
-    price: 9900,
+    name: "Pool Service",
+    bullets: ["Skim, vacuum & brush", "Chemical balancing", "Equipment health check", "Filter maintenance"],
+    price: 11900,
     priceType: "PER_VISIT",
-    featured: true,
+  },
+  {
+    serviceSlug: "power-washing",
+    cadenceKey: "quarterly",
+    name: "Power Washing",
+    bullets: ["Driveways, siding & decks", "Surface-safe pressure", "Free re-wash guarantee", "Bundle & save rates"],
+    price: 7900,
+    priceType: "PER_VISIT",
   },
 ];
 

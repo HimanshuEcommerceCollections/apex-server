@@ -3,6 +3,8 @@ import { membershipsService } from "./memberships.service";
 import { sendSuccess } from "../../utils/api-response";
 import { HttpStatus } from "../../constants/http-status";
 
+// Plan lifecycle (create/edit/deactivate) lives in the catalog module
+// (/admin/catalog/plans) — this controller is the customer-facing surface only.
 export class MembershipsController {
   // public
   listPlans = async (_req: Request, res: Response) => {
@@ -19,17 +21,6 @@ export class MembershipsController {
   };
   cancel = async (req: Request, res: Response) => {
     sendSuccess(res, await membershipsService.cancel(req.user!.id, req.params.id), "Membership cancellation scheduled");
-  };
-
-  // admin
-  listPlansAdmin = async (_req: Request, res: Response) => {
-    sendSuccess(res, await membershipsService.listPlansAdmin());
-  };
-  createPlan = async (req: Request, res: Response) => {
-    sendSuccess(res, await membershipsService.createPlan(req.body as never), "Plan created", HttpStatus.CREATED);
-  };
-  updatePlan = async (req: Request, res: Response) => {
-    sendSuccess(res, await membershipsService.updatePlan(req.params.id, req.body as never), "Plan updated");
   };
 }
 
