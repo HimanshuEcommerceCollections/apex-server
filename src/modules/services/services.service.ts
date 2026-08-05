@@ -21,6 +21,8 @@ export class ServicesService {
   }
 
   private serializeListItem(r: ServiceWithCategory): ServiceListItem {
+    // DERIVED: "up to X%" from the max active cadence discount — never stored.
+    const maxPct = Math.max(0, ...r.recurring.map((x) => x.discountPercent));
     return {
       id: r.id,
       name: r.name,
@@ -35,7 +37,7 @@ export class ServicesService {
       badges: r.badges,
       isRecurringEligible: r.isRecurringEligible,
       typicalDuration: r.typicalDuration,
-      recurringDiscount: r.recurringDiscount,
+      recurringDiscount: maxPct > 0 ? `up to ${maxPct}%` : null,
       status: r.status,
       sortOrder: r.sortOrder,
       category: r.category ? { slug: r.category.slug, name: r.category.name } : null,
@@ -43,6 +45,8 @@ export class ServicesService {
   }
 
   private serializeDetail(r: ServiceWithDetail): ServiceDetail {
+    const pctByCadence = new Map(r.recurring.map((x) => [x.cadenceId, x.discountPercent]));
+    const UNIT: Record<string, string | null> = { PER_VISIT: "/visit", PER_MONTH: "/mo", FLAT: null };
     return {
       ...this.serializeListItem(r),
       categoryId: r.categoryId,
@@ -51,16 +55,23 @@ export class ServicesService {
       basePrice: r.basePrice,
       claimsBlock: r.claimsBlock,
       recurringHeading: r.recurringHeading,
-      recurringPlans: r.recurringPlans.map((p) => ({
-        id: p.id,
-        name: p.name,
-        freq: p.freq,
-        amount: p.amount,
-        unit: p.unit,
-        disc: p.disc,
-        best: p.best,
-        cta: p.cta,
-      })),
+      // Admin-composed Plans on the legacy card wire shape, so the marketing
+      // pages keep rendering untouched. `amount` is the plan's BINDING pre-tax
+      // price (no longer decorative free text).
+      recurringPlans: r.plans.map((p) => {
+        const pct = pctByCadence.get(p.cadenceId) ?? 0;
+        return {
+          id: p.id,
+          name: p.name,
+          freq: p.cadence.label,
+          amount: `$${Math.round(p.price / 100)}`,
+          unit: UNIT[p.priceType] ?? null,
+          disc: pct > 0 ? `Save ${pct}%` : null,
+          best: p.featured,
+          cta: `Choose ${p.name.toLowerCase()}`,
+          bullets: p.bullets,
+        };
+      }),
     };
   }
 }

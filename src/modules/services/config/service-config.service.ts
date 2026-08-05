@@ -6,10 +6,10 @@ import { serviceConfigRepository, type ServiceWithConfig } from "./service-confi
 import type { ConfigGroupView, ServiceConfigResponse } from "./service-config.types";
 
 const HIDDEN = new Set<ServiceStatus>([ServiceStatus.DRAFT, ServiceStatus.INACTIVE]);
+// QUANTITY is optionless now — it carries its own unitLabel/unitPrice strategy.
 const OPTION_BEARING = new Set<ConfigInputType>([
   ConfigInputType.SELECT,
   ConfigInputType.MULTISELECT,
-  ConfigInputType.QUANTITY,
 ]);
 
 export interface PricePreviewInputDto {
@@ -75,6 +75,7 @@ export class ServiceConfigService {
       serviceId: g.serviceId,
       key: g.key,
       label: g.label,
+      description: g.description,
       inputType: g.inputType,
       uiHint: g.uiHint,
       applies: g.applies,
@@ -82,6 +83,10 @@ export class ServiceConfigService {
       priceDelta: g.priceDelta,
       selectMin: g.selectMin,
       selectMax: g.selectMax,
+      quantityMin: g.quantityMin,
+      quantityMax: g.quantityMax,
+      unitLabel: g.unitLabel,
+      unitPrice: g.unitPrice,
       sortOrder: g.sortOrder,
       status: g.status,
       options: g.options.map((o) => ({
@@ -113,14 +118,18 @@ export class ServiceConfigService {
       isRecurringEligible: service.isRecurringEligible,
       sortOrder: service.sortOrder,
       status: service.status,
+      taxRateBps: service.taxRateBps,
       configGroups,
-      rules: service.pricingRules.map((r) => ({
-        key: r.key,
-        label: r.label,
-        trigger: r.trigger,
-        effect: r.effect,
-        sortOrder: r.sortOrder,
-      })),
+      // The /book frequency section, cadence-sorted. Picking one applies its %
+      // to the configured pre-tax total — the system's only discount mechanism.
+      recurring: [...service.recurring]
+        .sort((a, b) => a.cadence.sortOrder - b.cadence.sortOrder)
+        .map((r) => ({
+          cadenceId: r.cadenceId,
+          key: r.cadence.key,
+          label: r.cadence.label,
+          discountPercent: r.discountPercent,
+        })),
     };
   }
 }

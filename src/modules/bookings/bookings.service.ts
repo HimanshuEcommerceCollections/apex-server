@@ -43,6 +43,8 @@ export class BookingsService {
       isRequired: g.isRequired,
       selectMin: g.selectMin,
       selectMax: g.selectMax,
+      quantityMin: g.quantityMin,
+      quantityMax: g.quantityMax,
       optionKeys: g.options.map((o) => o.key),
     }));
     const violations = validateSelections({

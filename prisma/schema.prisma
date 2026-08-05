@@ -66,12 +66,29 @@ enum CategoryStatus {
   INACTIVE
 }
 
+// SELECT / MULTISELECT / QUANTITY are what admins create ("Configurations":
+// choose-one, choose-many, and unit-priced quantity). TOGGLE and TEXTAREA are
+// legacy: TEXTAREA still backs the QUOTE description box until the /book rework
+// moves it into the flow; TOGGLE is no longer creatable.
 enum ConfigInputType {
   SELECT
   MULTISELECT
   QUANTITY
   TOGGLE
   TEXTAREA
+}
+
+/// Stripe subscription mapping for a RecurringCadence (NONE = one-time).
+enum CadenceInterval {
+  NONE
+  WEEK
+  MONTH
+}
+
+enum PlanPriceType {
+  PER_VISIT
+  PER_MONTH
+  FLAT
 }
 
 enum ConfigApplies {
@@ -269,16 +286,18 @@ model Service {
   sortOrder           Int           @default(0)
   claimsBlock         String?
   typicalDuration     String? // display label for the compare table, e.g. "2–3 hrs" (admin-editable)
-  recurringDiscount   String? // display label, e.g. "up to 15%" (admin-editable)
-  recurringHeading    String? // heading for the service-page "Recurring plans" section (admin-editable)
+  // "Recurring discount up to X%" is DERIVED at serialization time — the max
+  // active ServiceRecurring.discountPercent — never stored as a label.
+  recurringHeading    String? // heading for the service-page "Plans" section (admin-editable)
   isRecurringEligible Boolean       @default(false)
+  taxRateBps          Int           @default(0) // basis points (700 = 7%); applied at checkout, never inside the configurator
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
   category        ServiceCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   configGroups    ServiceConfigGroup[]
-  pricingRules    ServicePricingRule[]
-  recurringPlans  ServiceRecurringPlan[]
+  recurring       ServiceRecurring[]
+  plans           ServicePlan[]
   bookings        Booking[]
   configurations  BookingConfiguration[]
   quoteRequests   QuoteRequest[]
@@ -291,26 +310,68 @@ model Service {
   @@index([status])
 }
 
-/// Marketing "Recurring plans" cards on each service page (display-only, admin-editable).
-/// Amounts are stored as display strings (e.g. "$119") — not summed by the pricing engine.
-model ServiceRecurringPlan {
-  id        String   @id @default(uuid())
-  serviceId String
-  name      String // e.g. "Weekly"
-  freq      String // cadence label, e.g. "Every week"
-  amount    String // display price, e.g. "$119"
-  unit      String? // e.g. "/visit"
-  disc      String? // e.g. "Save 15%"
-  best      Boolean  @default(false) // renders the "Most popular" tag
-  cta       String // CTA label, e.g. "Choose weekly"
-  sortOrder Int      @default(0)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+/// One-time / Weekly / Bi-weekly / Monthly … — the GLOBAL cadence vocabulary,
+/// admin-extendable. interval/intervalCount are the future Stripe subscription
+/// mapping (NONE = one-time). Per-service pricing lives on ServiceRecurring.
+model RecurringCadence {
+  id            String          @id @default(uuid())
+  key           String          @unique // "one-time", "weekly", "biweekly", "monthly", …
+  label         String
+  interval      CadenceInterval
+  intervalCount Int             @default(1)
+  sortOrder     Int             @default(0)
+  status        ConfigStatus    @default(ACTIVE)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
-  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  services ServiceRecurring[]
+  plans    ServicePlan[]
+}
 
-  @@index([serviceId, active, sortOrder])
+/// A service's take on one global cadence: is it offered, and what % comes off
+/// the configured pre-tax total when the customer picks it. This IS the discount
+/// mechanism — there is no separate discount entity; "Recurring discount up to
+/// X%" is derived as the max active row.
+model ServiceRecurring {
+  id              String   @id @default(uuid())
+  serviceId       String
+  cadenceId       String
+  discountPercent Int      @default(0) // 0-100, % off the configured pre-tax total
+  isActive        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  service Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  cadence RecurringCadence @relation(fields: [cadenceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, cadenceId])
+  @@index([serviceId])
+}
+
+/// Admin-composed purchasable Plan: service + cadence + up-to-4 bullets + a
+/// BILLING price (subscribing to a plan charges exactly this, pre-tax — the
+/// configurator never touches it). Replaces both the free-text recurring cards
+/// and, once Stripe is wired, the display-only MembershipPlan catalog.
+model ServicePlan {
+  id              String        @id @default(uuid())
+  serviceId       String
+  cadenceId       String
+  name            String
+  bullets         String[]      @default([]) // max 4, app-enforced
+  price           Int // cents; the binding pre-tax billing amount
+  priceType       PlanPriceType @default(PER_VISIT)
+  featured        Boolean       @default(false) // renders the "Most popular" tag
+  sortOrder       Int           @default(0)
+  status          ConfigStatus  @default(ACTIVE)
+  stripeProductId String? // null until Stripe wiring (checkout stage)
+  stripePriceId   String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  service Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  cadence RecurringCadence @relation(fields: [cadenceId], references: [id], onDelete: Restrict)
+
+  @@index([serviceId, status, sortOrder])
 }
 
 model ServiceConfigGroup {
@@ -318,8 +379,14 @@ model ServiceConfigGroup {
   serviceId    String
   key          String // == pricing modifier id (verbatim)
   label        String
+  description  String? // admin-written blurb shown under the label
   inputType    ConfigInputType
   uiHint       String?
+  // QUANTITY groups only: the admin-chosen pricing strategy — a unit label
+  // ("per hour", "per kg", …) and the price per unit. The group contributes
+  // quantity × unitPrice; basePrice stays a flat minimum added once.
+  unitLabel    String?
+  unitPrice    Int?
   applies      ConfigApplies   @default(FLAT)
   isRequired   Boolean         @default(false)
   sortOrder    Int             @default(0)
@@ -358,23 +425,9 @@ model ServiceConfigOption {
   @@index([groupId, sortOrder])
 }
 
-model ServicePricingRule {
-  id        String       @id @default(uuid())
-  serviceId String
-  key       String
-  label     String
-  trigger   Json
-  effect    Json
-  sortOrder Int          @default(0)
-  status    ConfigStatus @default(ACTIVE)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-
-  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-
-  @@unique([serviceId, key])
-  @@index([serviceId, sortOrder])
-}
+// ServicePricingRule was retired with the Recurring/Plans model: frequency
+// discounts live on ServiceRecurring rows, and no other rule kind survived
+// (migration 20260805*_recurring_plans_model).
 
 // ===========================================================================
 // Booking (the Core Flow)

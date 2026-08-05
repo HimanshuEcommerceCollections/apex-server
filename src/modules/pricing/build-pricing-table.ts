@@ -1,17 +1,18 @@
 import type { Prisma } from "@prisma/client";
-import { ConfigApplies, ConfigInputType, ConfigStatus } from "../../enums";
+import { ConfigInputType, ConfigStatus } from "../../enums";
 import { PRICING_VERSION } from "../../constants";
-import type { Modifier, PricingRule, PricingTable, ServicePricing } from "./engine/types";
-import { RuleEffectSchema, RuleTriggerSchema } from "./engine/types";
+import type { Modifier, PricingTable, ServicePricing } from "./engine/types";
 
 export type ServiceWithPricingRows = Prisma.ServiceGetPayload<{
   include: {
     configGroups: { include: { options: true } };
-    pricingRules: true;
   };
 }>;
 
-type PriceableInputType = Exclude<ConfigInputType, typeof ConfigInputType.TEXTAREA>;
+type PriceableInputType = Exclude<
+  ConfigInputType,
+  typeof ConfigInputType.TEXTAREA
+>;
 
 /** TEXTAREA is intentionally absent: textarea groups NEVER become modifiers. */
 const INPUT_TYPE_TO_MODIFIER_TYPE: Record<PriceableInputType, Modifier["type"]> = {
@@ -40,31 +41,19 @@ export function buildPricingTable(service: ServiceWithPricingRows): PricingTable
         id: g.key, // id-alignment contract: group.key IS the modifier id, verbatim
         label: g.label,
         type: INPUT_TYPE_TO_MODIFIER_TYPE[g.inputType as PriceableInputType],
-        applies: g.applies === ConfigApplies.PER_UNIT ? "per_unit" : "flat",
         options: activeOptions.length
           ? activeOptions.map((o) => ({ id: o.key, label: o.label, delta: money(o.priceDelta) }))
           : undefined,
         delta: g.priceDelta != null ? money(g.priceDelta) : undefined,
+        // Quantity groups own their pricing strategy: quantity × unitPrice.
+        unit_price: g.unitPrice != null ? money(g.unitPrice) : undefined,
       } satisfies Modifier;
     });
-
-  const rules: PricingRule[] = service.pricingRules
-    .filter((r) => r.status === ConfigStatus.ACTIVE)
-    .map((r) => ({
-      key: r.key,
-      label: r.label,
-      // Json columns are re-validated on every build: a malformed row fails
-      // loudly here instead of pricing wrong silently.
-      trigger: RuleTriggerSchema.parse(r.trigger),
-      effect: RuleEffectSchema.parse(r.effect),
-      sortOrder: r.sortOrder,
-    }));
 
   const entry: ServicePricing = {
     base_price: money(service.basePrice),
     modifiers,
     fees: [],
-    rules,
     // Seed-only field (the engine never consults it); the mode that matters is
     // Service.pricingMode, dispatched in modes/registry.ts.
     mode: "FROM",

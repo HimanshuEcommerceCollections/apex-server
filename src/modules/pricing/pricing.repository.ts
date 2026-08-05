@@ -17,10 +17,6 @@ class PricingRepository {
             },
           },
         },
-        pricingRules: {
-          where: { status: ConfigStatus.ACTIVE },
-          orderBy: { sortOrder: "asc" },
-        },
       },
     });
   }

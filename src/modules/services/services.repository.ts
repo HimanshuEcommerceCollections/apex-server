@@ -1,15 +1,30 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db/client";
-import { ServiceStatus } from "../../enums";
+import { ConfigStatus, ServiceStatus } from "../../enums";
 
-const withCategory = { category: { select: { slug: true, name: true } } } as const;
+// Recurring rows feed the DERIVED "Recurring discount up to X%" label on every
+// listing row (max active discountPercent).
+const withCategory = {
+  category: { select: { slug: true, name: true } },
+  recurring: {
+    where: { isActive: true, cadence: { status: ConfigStatus.ACTIVE } },
+    select: { discountPercent: true },
+  },
+} satisfies Prisma.ServiceInclude;
 
-// Detail also pulls the active "Recurring plans" cards (ordered) for the service page.
+// Detail also pulls the active Plans (admin-composed, binding prices) for the
+// service page's plans section, plus each plan's cadence and the service's
+// recurring rows so "Save X%" can be shown per cadence.
 const withDetail = {
   category: { select: { slug: true, name: true } },
-  recurringPlans: {
-    where: { active: true },
+  recurring: {
+    where: { isActive: true, cadence: { status: ConfigStatus.ACTIVE } },
+    select: { cadenceId: true, discountPercent: true },
+  },
+  plans: {
+    where: { status: ConfigStatus.ACTIVE },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    include: { cadence: true },
   },
 } satisfies Prisma.ServiceInclude;
 
