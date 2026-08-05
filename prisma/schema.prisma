@@ -225,10 +225,8 @@ enum PaymentStatus {
   PARTIALLY_REFUNDED
 }
 
-enum MembershipInterval {
-  WEEK
-  MONTH
-}
+// MembershipInterval was retired with MembershipPlan: plans ARE ServicePlan now
+// (one entity), and their billing cycle comes from RecurringCadence.
 
 enum MembershipStatus {
   INCOMPLETE
@@ -301,7 +299,6 @@ model Service {
   bookings        Booking[]
   configurations  BookingConfiguration[]
   quoteRequests   QuoteRequest[]
-  membershipPlans MembershipPlan[]
   memberships     Membership[]
   serviceAreas    ServiceArea[]
   zipCoverage     ServiceZipCoverage[]
@@ -368,8 +365,9 @@ model ServicePlan {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  service Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  cadence RecurringCadence @relation(fields: [cadenceId], references: [id], onDelete: Restrict)
+  service     Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  cadence     RecurringCadence @relation(fields: [cadenceId], references: [id], onDelete: Restrict)
+  memberships Membership[]
 
   @@index([serviceId, status, sortOrder])
 }
@@ -900,28 +898,9 @@ model Payment {
   @@index([status])
 }
 
-model MembershipPlan {
-  id                  String             @id @default(uuid())
-  key                 String             @unique
-  name                String
-  description         String?
-  serviceId           String
-  interval            MembershipInterval
-  intervalCount       Int                @default(1)
-  fromPrice           Int? // cents; display-only "from $X / visit" member price (admin-editable)
-  currency            String             @default("USD")
-  stripeProductId     String? // null until wired to Stripe (a plan can exist display-only)
-  stripeAnchorPriceId String? // $0 cadence anchor; null until Stripe-wired
-  active              Boolean            @default(true)
-  sortOrder           Int                @default(0)
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-
-  service     Service      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  memberships Membership[]
-
-  @@index([active, sortOrder])
-}
+// MembershipPlan was merged into ServicePlan (one Plans entity — migration
+// 20260805*_merge_membership_plans): a plan's cadence comes from its
+// RecurringCadence and its price is the BINDING per-cycle amount.
 
 model Membership {
   id                   String           @id @default(uuid())
@@ -930,18 +909,18 @@ model Membership {
   serviceId            String
   status               MembershipStatus @default(INCOMPLETE)
   stripeSubscriptionId String           @unique
-  configuration        Json // selections used to recompute the price each cycle
+  configuration        Json // the job's selections/address/contact — describes the work, never the price
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean          @default(false)
   pausedUntil          DateTime?
-  lastAmount           Int? // last recomputed amount (cents); drives the change-notice
+  lastAmount           Int? // last billed cycle amount (cents) = plan.price at billing time
   currency             String           @default("USD")
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
-  user     User           @relation(fields: [userId], references: [id], onDelete: Restrict)
-  plan     MembershipPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
-  service  Service        @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan     ServicePlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  service  Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   visits   Booking[]
   payments Payment[]
 

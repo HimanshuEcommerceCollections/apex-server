@@ -1,31 +1,36 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db/client";
+import { ConfigStatus } from "../../enums";
 
-const planInclude = { service: { select: { slug: true, name: true } } } as const;
+// Plans ARE ServicePlan now (one entity); this repository only READS them —
+// plan lifecycle lives in the catalog module (/admin/catalog/plans).
+const planInclude = {
+  service: { select: { slug: true, name: true, currency: true } },
+  cadence: true,
+} as const;
 const membershipInclude = {
-  plan: { select: { key: true, name: true } },
+  plan: { select: { id: true, name: true, price: true } },
   service: { select: { slug: true, name: true } },
 } as const;
 
-export type PlanWithService = Prisma.MembershipPlanGetPayload<{ include: typeof planInclude }>;
+export type PlanWithRefs = Prisma.ServicePlanGetPayload<{ include: typeof planInclude }>;
 export type MembershipWithRefs = Prisma.MembershipGetPayload<{ include: typeof membershipInclude }>;
 
-/** Sole writer of MembershipPlan + Membership. */
+/** Sole writer of Membership; reader of ServicePlan for the membership surface. */
 export class MembershipsRepository {
-  // --- plans ---
-  createPlan(data: Prisma.MembershipPlanUncheckedCreateInput) {
-    return prisma.membershipPlan.create({ data, include: planInclude });
-  }
-  updatePlan(id: string, data: Prisma.MembershipPlanUncheckedUpdateInput) {
-    return prisma.membershipPlan.update({ where: { id }, data, include: planInclude });
-  }
+  // --- plans (read-only here) ---
   findPlanById(id: string) {
-    return prisma.membershipPlan.findUnique({ where: { id }, include: planInclude });
+    return prisma.servicePlan.findUnique({ where: { id }, include: planInclude });
   }
-  listPlans(activeOnly: boolean) {
-    return prisma.membershipPlan.findMany({
-      where: activeOnly ? { active: true } : {},
-      orderBy: { sortOrder: "asc" },
+
+  /** Active plans on recurring cadences — the public membership catalog. */
+  listActivePlans() {
+    return prisma.servicePlan.findMany({
+      where: {
+        status: ConfigStatus.ACTIVE,
+        cadence: { interval: { not: "NONE" }, status: ConfigStatus.ACTIVE },
+      },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
       include: planInclude,
     });
   }
@@ -40,8 +45,12 @@ export class MembershipsRepository {
   findMembershipById(id: string) {
     return prisma.membership.findUnique({ where: { id } });
   }
+  /** Includes the plan — its binding price is the cycle amount at billing time. */
   findMembershipBySubscription(stripeSubscriptionId: string) {
-    return prisma.membership.findUnique({ where: { stripeSubscriptionId } });
+    return prisma.membership.findUnique({
+      where: { stripeSubscriptionId },
+      include: { plan: { select: { id: true, name: true, price: true } } },
+    });
   }
   listMembershipsByUser(userId: string) {
     return prisma.membership.findMany({

@@ -11,13 +11,12 @@ import {
   UserStatus,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { CadenceInterval, MembershipInterval, PlanPriceType } from "@prisma/client";
+import { CadenceInterval, PlanPriceType } from "@prisma/client";
 import {
   AREAS,
   CATEGORIES,
   COMPARE_LABELS,
-  DEFAULT_COVERAGE,
-  MEMBERSHIP_PLANS,
+  DEFAULT_COVERAGE,
   RECURRING_HEADING,
   SEED_CADENCES,
   SEED_PLANS,
@@ -294,30 +293,7 @@ async function seedAdmin(): Promise<void> {
   console.log(`✓ bootstrap admin created: ${email} / ${password}  (change this!)`);
 }
 
-/** Display-only membership plans (no Stripe yet) — drive the /membership-plans cards. */
-async function seedMembershipPlans(serviceIds: Map<string, string>): Promise<void> {
-  for (const p of MEMBERSHIP_PLANS) {
-    const serviceId = serviceIds.get(p.serviceSlug);
-    if (!serviceId) continue;
-    await prisma.membershipPlan.upsert({
-      where: { key: p.key },
-      create: {
-        key: p.key,
-        name: p.name,
-        serviceId,
-        interval: p.interval as MembershipInterval,
-        intervalCount: p.intervalCount,
-        fromPrice: p.fromPrice,
-        currency: "USD",
-        stripeProductId: null,
-        stripeAnchorPriceId: null,
-        active: true,
-      },
-      // don't overwrite Stripe IDs once a plan has been wired to Stripe.
-      update: { name: p.name, serviceId, fromPrice: p.fromPrice, active: true },
-    });
-  }
-}
+// MembershipPlan merged into ServicePlan — seedRecurringAndPlans covers plans.
 
 async function main(): Promise<void> {
   validate();

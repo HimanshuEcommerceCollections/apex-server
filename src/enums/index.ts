@@ -28,7 +28,6 @@ export {
   CrewAssignmentStatus,
   PayoutStatus,
   PaymentStatus,
-  MembershipInterval,
   MembershipStatus,
   StripeEventStatus,
   CatalogVersionStatus,

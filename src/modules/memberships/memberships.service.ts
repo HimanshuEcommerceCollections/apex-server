@@ -1,6 +1,6 @@
 import type Stripe from "stripe";
 import { Prisma } from "@prisma/client";
-import { MembershipStatus, type MembershipInterval } from "../../enums";
+import { ConfigStatus, MembershipStatus } from "../../enums";
 import { env } from "../../config/env";
 import { ApiError } from "../../utils/api-error";
 import { logger } from "../../utils/logger";
@@ -9,73 +9,24 @@ import { validateSelections, type ConfigInput, type GroupDescriptor, type Pricin
 import { getStripe, brandMetadata, idemKey } from "../payments/stripe.client";
 import { paymentsRepository, PaymentStatus } from "../payments/payments.repository";
 import { usersService, usersRepository } from "../users";
-import { servicesRepository } from "../services";
 import { serviceConfigRepository } from "../services/config/service-config.repository";
-import { pricingService } from "../pricing";
 import { bookingsRepository } from "../bookings";
-import { membershipsRepository, type MembershipWithRefs, type PlanWithService } from "./memberships.repository";
+import { membershipsRepository, type MembershipWithRefs, type PlanWithRefs } from "./memberships.repository";
 import type { MembershipConfig, MembershipView, PlanView } from "./memberships.types";
+
+// Plans ARE ServicePlan now: lifecycle lives in the catalog module
+// (/admin/catalog/plans); this module reads them, subscribes customers to them,
+// and drives the Stripe lifecycle. A plan's price is BINDING — each billing
+// cycle invoices exactly plan.price; the stored configuration only describes
+// the JOB (selections/address/contact), never the amount.
 
 const subId = (v: string | { id: string } | null | undefined): string | null =>
   typeof v === "string" ? v : (v?.id ?? null);
 
 export class MembershipsService {
-  // --- admin: plans ---
-  async createPlan(dto: {
-    key: string;
-    name: string;
-    description?: string;
-    serviceId: string;
-    interval: "WEEK" | "MONTH";
-    intervalCount?: number;
-    fromPrice?: number;
-  }): Promise<PlanView> {
-    const svc = await servicesRepository.findByIdOrSlug(dto.serviceId);
-    if (!svc) throw ApiError.badRequest("Unknown service", { code: "SERVICE_NOT_FOUND" });
-    const stripe = getStripe();
-    const product = await stripe.products.create({
-      name: dto.name,
-      metadata: { ...brandMetadata(), planKey: dto.key },
-    });
-    const price = await stripe.prices.create({
-      product: product.id,
-      unit_amount: 0, // $0 cadence anchor; the real amount is a per-cycle invoice item
-      currency: "usd",
-      recurring: { interval: dto.interval.toLowerCase() as "week" | "month", interval_count: dto.intervalCount ?? 1 },
-      metadata: brandMetadata(),
-    });
-    const plan = await membershipsRepository.createPlan({
-      key: dto.key,
-      name: dto.name,
-      description: dto.description ?? null,
-      serviceId: svc.id,
-      interval: dto.interval as MembershipInterval,
-      intervalCount: dto.intervalCount ?? 1,
-      fromPrice: dto.fromPrice ?? null,
-      stripeProductId: product.id,
-      stripeAnchorPriceId: price.id,
-      active: true,
-    });
-    return this.serializePlan(plan);
-  }
-
-  async updatePlan(
-    id: string,
-    changes: { name?: string; description?: string | null; active?: boolean; sortOrder?: number; fromPrice?: number | null },
-  ): Promise<PlanView> {
-    const existing = await membershipsRepository.findPlanById(id);
-    if (!existing) throw ApiError.notFound("Plan not found", { code: "PLAN_NOT_FOUND" });
-    const plan = await membershipsRepository.updatePlan(id, changes);
-    return this.serializePlan(plan);
-  }
-
-  async listPlansAdmin(): Promise<PlanView[]> {
-    return (await membershipsRepository.listPlans(false)).map((p) => this.serializePlan(p));
-  }
-
   // --- public ---
   async listPlans(): Promise<PlanView[]> {
-    return (await membershipsRepository.listPlans(true)).map((p) => this.serializePlan(p));
+    return (await membershipsRepository.listActivePlans()).map((p) => this.serializePlan(p));
   }
 
   // --- customer ---
@@ -86,12 +37,15 @@ export class MembershipsService {
     address: { street: string; city: string; state: string; zip: string };
   }): Promise<{ checkout_url: string | null }> {
     const plan = await membershipsRepository.findPlanById(dto.planId);
-    if (!plan || !plan.active) throw ApiError.badRequest("Plan unavailable", { code: "PLAN_UNAVAILABLE" });
-    // Display-only plans (marketing catalog) have no Stripe anchor yet.
-    if (!plan.stripeAnchorPriceId) {
+    if (!plan || plan.status !== ConfigStatus.ACTIVE || plan.cadence.interval === "NONE") {
+      throw ApiError.badRequest("Plan unavailable", { code: "PLAN_UNAVAILABLE" });
+    }
+    // Plans without a Stripe price are display-only until the checkout stage wires them.
+    if (!plan.stripePriceId) {
       throw ApiError.badRequest("This plan isn't open for subscription yet", { code: "PLAN_NOT_SUBSCRIBABLE" });
     }
 
+    // Selections describe the job for the crew — validated, never priced.
     const cfg = await serviceConfigRepository.findServiceWithConfig(plan.serviceId);
     const groups: GroupDescriptor[] = (cfg?.configGroups ?? []).map((g) => ({
       key: g.key,
@@ -134,7 +88,7 @@ export class MembershipsService {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
-      line_items: [{ price: plan.stripeAnchorPriceId!, quantity: 1 }], // non-null: guarded above
+      line_items: [{ price: plan.stripePriceId!, quantity: 1 }], // non-null: guarded above
       subscription_data: { metadata: { ...brandMetadata(), membershipId: membership.id } },
       metadata: { ...brandMetadata(), membershipId: membership.id },
       success_url: `${env.CLIENT_BASE_URL}/account?membership=success`,
@@ -193,22 +147,23 @@ export class MembershipsService {
         if (!sub) return;
         const membership = await membershipsRepository.findMembershipBySubscription(sub);
         if (!membership) return;
-        const config = membership.configuration as unknown as MembershipConfig;
-        const priced = await pricingService.recomputeForMembership(membership.serviceId, config.selections, config.quantity);
+        // The plan's price is BINDING — every cycle invoices exactly this. The
+        // old per-cycle recompute from the stored configuration is gone.
+        const amount = membership.plan.price;
         await getStripe().invoiceItems.create(
           {
             customer: inv.customer as string,
             invoice: inv.id,
-            amount: priced.amount,
-            currency: priced.currency.toLowerCase(),
-            description: "Service for this billing cycle",
+            amount,
+            currency: membership.currency.toLowerCase(),
+            description: `${membership.plan.name} — service for this billing cycle`,
           },
           { idempotencyKey: idemKey(`invitem_${inv.id}`) },
         );
-        if (membership.lastAmount !== priced.amount) {
-          logger.info(`[membership] price change ${membership.id}: ${membership.lastAmount ?? "—"} -> ${priced.amount} (notify member)`);
+        if (membership.lastAmount !== amount) {
+          logger.info(`[membership] price change ${membership.id}: ${membership.lastAmount ?? "—"} -> ${amount} (notify member)`);
         }
-        await membershipsRepository.updateMembership(membership.id, { lastAmount: priced.amount });
+        await membershipsRepository.updateMembership(membership.id, { lastAmount: amount });
         break;
       }
       case "invoice.paid": {
@@ -286,17 +241,18 @@ export class MembershipsService {
     }
   }
 
-  private serializePlan(p: PlanWithService): PlanView {
+  private serializePlan(p: PlanWithRefs): PlanView {
     return {
       id: p.id,
-      key: p.key,
+      key: p.id,
       name: p.name,
-      description: p.description,
-      interval: p.interval,
-      intervalCount: p.intervalCount,
-      fromPrice: p.fromPrice,
-      currency: p.currency,
-      active: p.active,
+      description: null,
+      interval: p.cadence.interval,
+      intervalCount: p.cadence.intervalCount,
+      fromPrice: p.price,
+      currency: p.service.currency,
+      bullets: p.bullets,
+      active: p.status === ConfigStatus.ACTIVE,
       service: p.service ? { slug: p.service.slug, name: p.service.name } : null,
     };
   }
@@ -305,7 +261,7 @@ export class MembershipsService {
     return {
       id: m.id,
       status: m.status,
-      plan: m.plan ? { key: m.plan.key, name: m.plan.name } : null,
+      plan: m.plan ? { id: m.plan.id, name: m.plan.name } : null,
       service: m.service ? { slug: m.service.slug, name: m.service.name } : null,
       currentPeriodEnd: m.currentPeriodEnd ? m.currentPeriodEnd.toISOString() : null,
       cancelAtPeriodEnd: m.cancelAtPeriodEnd,

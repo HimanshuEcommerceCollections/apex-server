@@ -81,25 +81,8 @@ class PricingService {
     }
   }
 
-  /**
-   * Recompute a membership cycle's price from the member's stored configuration
-   * against the latest published catalog (docs 07 §6.4). Used by the invoice.created
-   * webhook to set each cycle's amount. Throws for non-billable (QUOTE) services.
-   */
-  async recomputeForMembership(
-    idOrSlug: string,
-    selections: PricePreviewInput["selections"],
-    quantity = 1,
-  ): Promise<{ amount: number; currency: string }> {
-    const ctx = await this.buildContext(idOrSlug, { selections, quantity });
-    const dp = getPricingModeHandler(ctx.service.pricingMode).recompute(ctx);
-    if (!dp) {
-      throw ApiError.badRequest("This service can't be billed as a membership", {
-        code: "NOT_MEMBERSHIP_BILLABLE",
-      });
-    }
-    return { amount: dp.total.amount, currency: dp.total.currency };
-  }
+  // recomputeForMembership is gone: a plan's price is BINDING, so membership
+  // cycles invoice exactly ServicePlan.price (memberships.service invoice.created).
 
   private async buildContext(
     idOrSlug: string,

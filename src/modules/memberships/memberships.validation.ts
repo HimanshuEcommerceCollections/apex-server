@@ -1,29 +1,9 @@
 import { z } from "zod";
 import { selectionsSchema, zipSchema } from "../../shared";
 
-const fromPriceField = z.coerce.number().int().min(0).max(2_000_000); // cents, ≤ $20,000
+// Plan create/update schemas left with the retired /admin/membership-plans API —
+// plan lifecycle is the catalog module's (/admin/catalog/plans).
 
-export const createPlanSchema = z.object({
-  key: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-  name: z.string().trim().min(2).max(120),
-  description: z.string().trim().max(500).optional(),
-  serviceId: z.string().uuid(),
-  interval: z.enum(["WEEK", "MONTH"]),
-  intervalCount: z.coerce.number().int().positive().max(12).optional(),
-  fromPrice: fromPriceField.optional(),
-});
-
-export const updatePlanSchema = z
-  .object({
-    name: z.string().trim().min(2).max(120).optional(),
-    description: z.string().trim().max(500).nullable().optional(),
-    active: z.boolean().optional(),
-    sortOrder: z.coerce.number().int().optional(),
-    fromPrice: fromPriceField.nullable().optional(),
-  })
-  .refine((d) => Object.keys(d).length > 0, { message: "At least one field is required" });
-
-export const planIdParamSchema = z.object({ id: z.string().uuid() });
 export const membershipIdParamSchema = z.object({ id: z.string().uuid() });
 
 export const subscribeSchema = z.object({

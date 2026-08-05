@@ -1,15 +1,12 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { validate } from "../../middleware/validate";
-import { authenticate, authorize } from "../../middleware/auth";
+import { authenticate } from "../../middleware/auth";
 import { membershipsController } from "./memberships.controller";
-import {
-  createPlanSchema,
-  membershipIdParamSchema,
-  planIdParamSchema,
-  subscribeSchema,
-  updatePlanSchema,
-} from "./memberships.validation";
+import { membershipIdParamSchema, subscribeSchema } from "./memberships.validation";
+
+// The old /admin/membership-plans router is gone: plans ARE ServicePlan now,
+// managed at /admin/catalog/plans (catalog module).
 
 /** Public: GET /api/v1/membership/plans. */
 export const membershipRouter = Router();
@@ -24,15 +21,4 @@ meMembershipsRouter.delete(
   "/:id",
   validate({ params: membershipIdParamSchema }),
   asyncHandler(membershipsController.cancel),
-);
-
-/** Admin: /api/v1/admin/membership-plans (membership:manage). */
-export const adminMembershipPlansRouter = Router();
-adminMembershipPlansRouter.use(authorize("membership:manage"));
-adminMembershipPlansRouter.get("/", asyncHandler(membershipsController.listPlansAdmin));
-adminMembershipPlansRouter.post("/", validate({ body: createPlanSchema }), asyncHandler(membershipsController.createPlan));
-adminMembershipPlansRouter.patch(
-  "/:id",
-  validate({ params: planIdParamSchema, body: updatePlanSchema }),
-  asyncHandler(membershipsController.updatePlan),
 );
