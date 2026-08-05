@@ -1,9 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db/client";
+import { ConfigStatus } from "../../enums";
 
 const editInclude = {
   configGroups: { orderBy: { sortOrder: "asc" }, include: { options: { orderBy: { sortOrder: "asc" } } } },
-  pricingRules: { orderBy: { sortOrder: "asc" } },
+  recurring: true,
 } satisfies Prisma.ServiceInclude;
 
 export type ServiceForEdit = Prisma.ServiceGetPayload<{ include: typeof editInclude }>;
@@ -11,37 +12,16 @@ export type ServiceForEdit = Prisma.ServiceGetPayload<{ include: typeof editIncl
 export interface PricingUpdate {
   pricingMode?: "FROM" | "QUOTE";
   basePrice?: number;
+  taxRateBps?: number;
   typicalDuration?: string | null;
-  recurringDiscount?: string | null;
   options?: { id: string; priceDelta: number }[];
-  rules?: { id: string; value: number }[];
 }
-
-export interface RecurringPlanInput {
-  name: string;
-  freq: string;
-  amount: string;
-  unit?: string | null;
-  disc?: string | null;
-  best?: boolean;
-  cta: string;
-}
-
-const recurringRef = {
-  id: true,
-  slug: true,
-  name: true,
-  recurringHeading: true,
-  recurringPlans: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-} satisfies Prisma.ServiceSelect;
-
-export type ServiceRecurringRef = Prisma.ServiceGetPayload<{ select: typeof recurringRef }>;
 
 /**
- * Runtime writer of catalog PRICING fields (Service.pricingMode/basePrice,
- * ServiceConfigOption.priceDelta, ServicePricingRule.effect.value). Reads ALL
- * rows (any status) for the admin editor. The pricing engine reads these live,
- * so a committed change is reflected on the next recompute (docs 07 §7).
+ * Runtime writer of the admin-controlled catalog: Service pricing fields,
+ * configuration groups/options, per-service recurring rows, global cadences and
+ * plans. The pricing engine reads these live, so a committed change is reflected
+ * on the next recompute.
  */
 export class CatalogRepository {
   findServiceForEdit(idOrSlug: string) {
@@ -51,70 +31,158 @@ export class CatalogRepository {
     });
   }
 
-  /** Service + its recurring-plan cards (all rows, any status) for the admin editor. */
-  findServiceRecurring(idOrSlug: string): Promise<ServiceRecurringRef | null> {
-    return prisma.service.findFirst({
-      where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
-      select: recurringRef,
-    });
-  }
-
-  /** Replace a service's recurring section (heading + full ordered plan list) atomically. */
-  async replaceRecurring(serviceId: string, heading: string | null, plans: RecurringPlanInput[]): Promise<void> {
-    await prisma.$transaction([
-      prisma.service.update({ where: { id: serviceId }, data: { recurringHeading: heading } }),
-      prisma.serviceRecurringPlan.deleteMany({ where: { serviceId } }),
-      prisma.serviceRecurringPlan.createMany({
-        data: plans.map((p, i) => ({
-          serviceId,
-          name: p.name,
-          freq: p.freq,
-          amount: p.amount,
-          unit: p.unit ?? null,
-          disc: p.disc ?? null,
-          best: p.best ?? false,
-          cta: p.cta,
-          sortOrder: i,
-          active: true,
-        })),
-      }),
-    ]);
-  }
-
-  /** Apply a pricing update atomically. `ruleEffects` carries the pre-read effect JSONs. */
-  async updatePricing(
-    serviceId: string,
-    changes: PricingUpdate,
-    ruleEffects: Map<string, Record<string, unknown>>,
-  ): Promise<void> {
+  /** Apply a pricing update atomically. */
+  async updatePricing(serviceId: string, changes: PricingUpdate): Promise<void> {
     await prisma.$transaction(async (tx) => {
       if (
         changes.pricingMode != null ||
         changes.basePrice != null ||
-        changes.typicalDuration !== undefined ||
-        changes.recurringDiscount !== undefined
+        changes.taxRateBps != null ||
+        changes.typicalDuration !== undefined
       ) {
         await tx.service.update({
           where: { id: serviceId },
           data: {
             ...(changes.pricingMode != null ? { pricingMode: changes.pricingMode } : {}),
             ...(changes.basePrice != null ? { basePrice: changes.basePrice } : {}),
+            ...(changes.taxRateBps != null ? { taxRateBps: changes.taxRateBps } : {}),
             ...(changes.typicalDuration !== undefined ? { typicalDuration: changes.typicalDuration || null } : {}),
-            ...(changes.recurringDiscount !== undefined ? { recurringDiscount: changes.recurringDiscount || null } : {}),
           },
         });
       }
       for (const o of changes.options ?? []) {
         await tx.serviceConfigOption.update({ where: { id: o.id }, data: { priceDelta: o.priceDelta } });
       }
-      for (const r of changes.rules ?? []) {
-        const effect = ruleEffects.get(r.id);
-        if (!effect) continue;
-        await tx.servicePricingRule.update({
-          where: { id: r.id },
-          data: { effect: { ...effect, value: r.value } as Prisma.InputJsonValue },
-        });
-      }
+    });
+  }
+
+  // ── Configurations ─────────────────────────────────────────────────────────
+
+  groupKeys(serviceId: string) {
+    return prisma.serviceConfigGroup.findMany({ where: { serviceId }, select: { key: true } });
+  }
+
+  createGroup(data: Prisma.ServiceConfigGroupUncheckedCreateInput) {
+    return prisma.serviceConfigGroup.create({ data, include: { options: true } });
+  }
+
+  findGroup(id: string) {
+    return prisma.serviceConfigGroup.findUnique({ where: { id }, include: { options: true } });
+  }
+
+  updateGroup(id: string, data: Prisma.ServiceConfigGroupUncheckedUpdateInput) {
+    return prisma.serviceConfigGroup.update({ where: { id }, data, include: { options: true } });
+  }
+
+  optionKeys(groupId: string) {
+    return prisma.serviceConfigOption.findMany({ where: { groupId }, select: { key: true } });
+  }
+
+  async nextOptionSort(groupId: string): Promise<number> {
+    const max = await prisma.serviceConfigOption.aggregate({ where: { groupId }, _max: { sortOrder: true } });
+    return (max._max.sortOrder ?? -1) + 1;
+  }
+
+  async nextGroupSort(serviceId: string): Promise<number> {
+    const max = await prisma.serviceConfigGroup.aggregate({ where: { serviceId }, _max: { sortOrder: true } });
+    return (max._max.sortOrder ?? -1) + 1;
+  }
+
+  createOption(data: Prisma.ServiceConfigOptionUncheckedCreateInput) {
+    return prisma.serviceConfigOption.create({ data });
+  }
+
+  findOption(id: string) {
+    return prisma.serviceConfigOption.findUnique({ where: { id }, include: { group: true } });
+  }
+
+  updateOption(id: string, data: Prisma.ServiceConfigOptionUncheckedUpdateInput) {
+    return prisma.serviceConfigOption.update({ where: { id }, data });
+  }
+
+  // ── Recurring (per-service grid) ───────────────────────────────────────────
+
+  /** Upsert the sent rows (the grid is service × cadence, unique-constrained). */
+  async putRecurring(
+    serviceId: string,
+    rows: { cadenceId: string; discountPercent: number; isActive: boolean }[],
+  ): Promise<void> {
+    await prisma.$transaction(
+      rows.map((r) =>
+        prisma.serviceRecurring.upsert({
+          where: { serviceId_cadenceId: { serviceId, cadenceId: r.cadenceId } },
+          create: { serviceId, cadenceId: r.cadenceId, discountPercent: r.discountPercent, isActive: r.isActive },
+          update: { discountPercent: r.discountPercent, isActive: r.isActive },
+        }),
+      ),
+    );
+  }
+
+  // ── Global cadences ────────────────────────────────────────────────────────
+
+  listCadences() {
+    return prisma.recurringCadence.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });
+  }
+
+  cadenceKeys() {
+    return prisma.recurringCadence.findMany({ select: { key: true } });
+  }
+
+  async createCadence(data: Prisma.RecurringCadenceUncheckedCreateInput) {
+    // A new cadence appears on every service's grid, inactive at 0% until an
+    // admin turns it on per service.
+    const cadence = await prisma.recurringCadence.create({ data });
+    const services = await prisma.service.findMany({ select: { id: true } });
+    if (services.length) {
+      await prisma.serviceRecurring.createMany({
+        data: services.map((s) => ({ serviceId: s.id, cadenceId: cadence.id })),
+        skipDuplicates: true,
+      });
+    }
+    return cadence;
+  }
+
+  findCadence(id: string) {
+    return prisma.recurringCadence.findUnique({ where: { id } });
+  }
+
+  updateCadence(id: string, data: Prisma.RecurringCadenceUncheckedUpdateInput) {
+    return prisma.recurringCadence.update({ where: { id }, data });
+  }
+
+  // ── Plans ──────────────────────────────────────────────────────────────────
+
+  listPlans() {
+    return prisma.servicePlan.findMany({
+      orderBy: [{ createdAt: "desc" }],
+      include: { service: { select: { name: true, slug: true } }, cadence: { select: { label: true } } },
+    });
+  }
+
+  createPlan(data: Prisma.ServicePlanUncheckedCreateInput) {
+    return prisma.servicePlan.create({
+      data,
+      include: { service: { select: { name: true, slug: true } }, cadence: { select: { label: true } } },
+    });
+  }
+
+  findPlan(id: string) {
+    return prisma.servicePlan.findUnique({ where: { id } });
+  }
+
+  updatePlan(id: string, data: Prisma.ServicePlanUncheckedUpdateInput) {
+    return prisma.servicePlan.update({
+      where: { id },
+      data,
+      include: { service: { select: { name: true, slug: true } }, cadence: { select: { label: true } } },
+    });
+  }
+
+  /** Active cadences for grid assembly in the edit view. */
+  activeCadences() {
+    return prisma.recurringCadence.findMany({
+      where: { status: ConfigStatus.ACTIVE },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
   }
 }

@@ -32,6 +32,9 @@ export type PricingModeName = "FROM" | "QUOTE";
 export interface GroupDescriptor {
   key: string;
   inputType: ConfigInput;
+  /** QUANTITY groups: allowed numeric range (defaults 1..999). */
+  quantityMin?: number | null;
+  quantityMax?: number | null;
   isRequired: boolean;
   selectMin: number | null;
   selectMax: number | null;
@@ -127,10 +130,16 @@ function validateGroupValue(group: GroupDescriptor, value: unknown): SelectionVi
       return out;
     }
     case "QUANTITY": {
+      // Optionless: quantity groups carry their own unit price; the selection is
+      // the numeric quantity itself, bounded by the group's quantityMin/Max.
       if (typeof value !== "number" || !Number.isInteger(value)) {
         return bad("INVALID_SELECTION_VALUE", `"${group.key}" expects an integer`);
       }
-      if (!opts.has(String(value))) return bad("UNKNOWN_OPTION_KEY", `${value} is out of range for "${group.key}"`);
+      const min = group.quantityMin ?? 1;
+      const max = group.quantityMax ?? 999;
+      if (value < min || value > max) {
+        return bad("QUANTITY_RANGE", `"${group.key}" must be between ${min} and ${max}`);
+      }
       return [];
     }
     case "TOGGLE": {

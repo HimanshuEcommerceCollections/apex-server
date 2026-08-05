@@ -1,4 +1,3 @@
-import type { Prisma } from "@prisma/client";
 import type { ConfigApplies, ConfigInputType, ConfigStatus, PricingMode, ServiceStatus } from "../../../enums";
 
 export interface ConfigOptionView {
@@ -16,6 +15,7 @@ export interface ConfigGroupView {
   serviceId: string;
   key: string;
   label: string;
+  description: string | null; // admin-written blurb shown under the label
   inputType: ConfigInputType;
   uiHint: string | null;
   applies: ConfigApplies;
@@ -23,17 +23,22 @@ export interface ConfigGroupView {
   priceDelta: number | null;
   selectMin: number | null;
   selectMax: number | null;
+  // QUANTITY groups: numeric bounds + the pricing strategy (quantity × unitPrice).
+  quantityMin: number | null;
+  quantityMax: number | null;
+  unitLabel: string | null; // e.g. "per hour"
+  unitPrice: number | null; // cents per unit
   sortOrder: number;
   status: ConfigStatus;
   options: ConfigOptionView[];
 }
 
-export interface RuleView {
-  key: string;
+/** One active cadence offer on a service — the /book frequency section. */
+export interface RecurringOfferView {
+  cadenceId: string;
+  key: string; // "one-time", "weekly", …
   label: string;
-  trigger: Prisma.JsonValue;
-  effect: Prisma.JsonValue;
-  sortOrder: number;
+  discountPercent: number; // % off the configured pre-tax total
 }
 
 export interface ServiceConfigResponse {
@@ -53,6 +58,7 @@ export interface ServiceConfigResponse {
   isRecurringEligible: boolean;
   sortOrder: number;
   status: ServiceStatus;
+  taxRateBps: number; // basis points; applied at checkout, never in the configurator
   configGroups: ConfigGroupView[];
-  rules: RuleView[];
+  recurring: RecurringOfferView[];
 }

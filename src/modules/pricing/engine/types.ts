@@ -54,9 +54,9 @@ export const ModifierSchema = z.object({
   id: z.string(),
   label: z.string(),
   type: ModifierType,
-  applies: z.enum(["per_unit", "flat"]).default("flat"),
   options: z.array(ModifierOptionSchema).optional(),
-  delta: MoneySchema.optional(),
+  delta: MoneySchema.optional(), // legacy TOGGLE group delta
+  unit_price: MoneySchema.optional(), // quantity groups: price per unit (× the numeric selection)
 });
 
 export const FeeSchema = z.object({
@@ -67,54 +67,20 @@ export const FeeSchema = z.object({
   value: z.number(),
 });
 
-// ── Apex extension: conditional rules (ServicePricingRule.trigger / .effect) ───
-
-export const MinSelectedTriggerSchema = z.object({
-  kind: z.literal("min_selected"),
-  group: z.string(),
-  count: z.number().int().positive(),
-});
-
-export const OptionSelectedTriggerSchema = z.object({
-  kind: z.literal("option_selected"),
-  group: z.string(),
-  option: z.string(),
-});
-
-export const RuleTriggerSchema = z.discriminatedUnion("kind", [
-  MinSelectedTriggerSchema,
-  OptionSelectedTriggerSchema,
-]);
-export type RuleTrigger = z.infer<typeof RuleTriggerSchema>;
-
-export const RuleEffectSchema = z.object({
-  kind: z.enum(["fee", "discount"]),
-  calc: z.enum(["flat", "percent"]),
-  value: z.number(),
-});
-export type RuleEffect = z.infer<typeof RuleEffectSchema>;
-
-export const PricingRuleSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  trigger: RuleTriggerSchema,
-  effect: RuleEffectSchema,
-  sortOrder: z.number().int().default(0),
-});
-export type PricingRule = z.infer<typeof PricingRuleSchema>;
+// The conditional-rules extension (ServicePricingRule) retired with the
+// Recurring/Plans model: the only discount left is the recurring cadence %,
+// applied by the caller on the configured pre-tax total — never in the engine.
 
 /**
- * One service's pricing entry. `rules` is the Apex extension. `mode` and
- * `from_price` are SEED-ONLY fields (the engine never consults them); they live
- * here so PricingTableSchema.parse validates the whole seed file in one pass.
+ * One service's pricing entry. `mode` is a SEED-ONLY field (the engine never
+ * consults it); it lives here so PricingTableSchema.parse validates the whole
+ * seed file in one pass.
  */
 export const ServicePricingSchema = z.object({
   base_price: MoneySchema,
   modifiers: z.array(ModifierSchema).default([]),
   fees: z.array(FeeSchema).default([]),
-  rules: z.array(PricingRuleSchema).default([]),
   mode: z.enum(["FROM", "QUOTE"]).default("FROM"),
-  from_price: MoneySchema.optional(),
 });
 export type ServicePricing = z.infer<typeof ServicePricingSchema>;
 

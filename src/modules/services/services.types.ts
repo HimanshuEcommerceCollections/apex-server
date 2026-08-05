@@ -17,15 +17,17 @@ export interface ServiceListItem {
   category: { slug: string; name: string } | null;
 }
 
+/** Admin-composed Plan on the legacy card wire shape (marketing pages render it as-is). */
 export interface RecurringPlanView {
   id: string;
   name: string;
-  freq: string;
-  amount: string;
-  unit: string | null;
-  disc: string | null;
-  best: boolean;
+  freq: string; // cadence label
+  amount: string; // "$X" — the plan's BINDING pre-tax price, formatted
+  unit: string | null; // from priceType: "/visit", "/mo", or null
+  disc: string | null; // "Save X%" from the service's cadence discount
+  best: boolean; // ServicePlan.featured
   cta: string;
+  bullets: string[]; // up to 4 admin-written points
 }
 
 export interface ServiceDetail extends ServiceListItem {

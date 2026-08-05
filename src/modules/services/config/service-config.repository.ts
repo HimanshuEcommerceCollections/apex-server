@@ -10,7 +10,11 @@ const configInclude = {
       options: { where: { status: ConfigStatus.ACTIVE }, orderBy: { sortOrder: "asc" } },
     },
   },
-  pricingRules: { where: { status: ConfigStatus.ACTIVE }, orderBy: { sortOrder: "asc" } },
+  // The /book frequency section: active cadence offers with their discount %.
+  recurring: {
+    where: { isActive: true, cadence: { status: ConfigStatus.ACTIVE } },
+    include: { cadence: true },
+  },
 } satisfies Prisma.ServiceInclude;
 
 export type ServiceWithConfig = Prisma.ServiceGetPayload<{ include: typeof configInclude }>;

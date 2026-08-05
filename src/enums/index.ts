@@ -8,6 +8,8 @@ export {
   ConfigInputType,
   ConfigApplies,
   ConfigStatus,
+  CadenceInterval,
+  PlanPriceType,
   BookingStatus,
   BookingSource,
   ContactMethod,

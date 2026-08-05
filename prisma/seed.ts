@@ -11,8 +11,20 @@ import {
   UserStatus,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { MembershipInterval } from "@prisma/client";
-import { AREAS, CATEGORIES, COMPARE_LABELS, DEFAULT_COVERAGE, MEMBERSHIP_PLANS, RECURRING_PLANS, SERVICES, type SeedService } from "./seed-data";
+import { CadenceInterval, MembershipInterval, PlanPriceType } from "@prisma/client";
+import {
+  AREAS,
+  CATEGORIES,
+  COMPARE_LABELS,
+  DEFAULT_COVERAGE,
+  MEMBERSHIP_PLANS,
+  RECURRING_HEADING,
+  SEED_CADENCES,
+  SEED_PLANS,
+  SEED_RECURRING,
+  SERVICES,
+  type SeedService,
+} from "./seed-data";
 
 const prisma = new PrismaClient();
 const KEY_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -30,6 +42,9 @@ function validate(): void {
       if (g.inputType === "TEXTAREA") {
         if (g.options?.length) errors.push(`${s.slug}/${g.key}: TEXTAREA must have no options`);
         if (s.mode !== "QUOTE") errors.push(`${s.slug}/${g.key}: TEXTAREA only allowed on QUOTE services`);
+      } else if (g.inputType === "QUANTITY") {
+        if (g.options?.length) errors.push(`${s.slug}/${g.key}: QUANTITY is optionless (unitLabel/unitPrice instead)`);
+        if (g.unitPrice == null || !g.unitLabel) errors.push(`${s.slug}/${g.key}: QUANTITY needs unitLabel + unitPrice`);
       } else if (g.inputType === "SELECT" || g.inputType === "MULTISELECT") {
         if (!g.options?.length) errors.push(`${s.slug}/${g.key}: ${g.inputType} needs options`);
         const optKeys = new Set<string>();
@@ -41,18 +56,20 @@ function validate(): void {
         }
       }
     }
-    // rule triggers must resolve to real groups/options (id-alignment)
-    for (const r of s.rules) {
-      const g = s.groups.find((x) => x.key === r.trigger.group);
-      if (!g) {
-        errors.push(`${s.slug}: rule ${r.key} references unknown group "${r.trigger.group}"`);
-        continue;
-      }
-      if (r.trigger.kind === "option_selected" && !g.options?.some((o) => o.key === r.trigger.option)) {
-        errors.push(`${s.slug}: rule ${r.key} references unknown option "${r.trigger.option}"`);
-      }
-      if (r.effect.value < 0) errors.push(`${s.slug}: rule ${r.key} has a negative effect value`);
+  }
+  // recurring + plans must reference real cadences/services
+  const cadenceKeys = new Set(SEED_CADENCES.map((c) => c.key));
+  const serviceSlugs = new Set(SERVICES.map((s) => s.slug));
+  for (const [slug, rows] of Object.entries(SEED_RECURRING)) {
+    if (!serviceSlugs.has(slug)) errors.push(`SEED_RECURRING: unknown service "${slug}"`);
+    for (const k of Object.keys(rows)) {
+      if (!cadenceKeys.has(k)) errors.push(`SEED_RECURRING/${slug}: unknown cadence "${k}"`);
     }
+  }
+  for (const p of SEED_PLANS) {
+    if (!serviceSlugs.has(p.serviceSlug)) errors.push(`SEED_PLANS: unknown service "${p.serviceSlug}"`);
+    if (!cadenceKeys.has(p.cadenceKey)) errors.push(`SEED_PLANS/${p.name}: unknown cadence "${p.cadenceKey}"`);
+    if (p.bullets.length > 4) errors.push(`SEED_PLANS/${p.name}: more than 4 bullets`);
   }
   if (errors.length) {
     throw new Error(`Seed validation failed:\n  - ${errors.join("\n  - ")}`);
@@ -92,9 +109,9 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
       sortOrder: index,
       claimsBlock: s.claimsBlock ?? null,
       typicalDuration: labels?.typicalDuration ?? null,
-      recurringDiscount: labels?.recurringDiscount ?? null,
-      recurringHeading: RECURRING_PLANS[s.slug]?.heading ?? null,
+      recurringHeading: s.isRecurringEligible ? RECURRING_HEADING : null,
       isRecurringEligible: s.isRecurringEligible ?? false,
+      taxRateBps: 700, // ~7% per the /pricing FAQ copy; admin-tunable
     },
     update: {
       categoryId,
@@ -109,31 +126,10 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
       sortOrder: index,
       claimsBlock: s.claimsBlock ?? null,
       typicalDuration: labels?.typicalDuration ?? null,
-      recurringDiscount: labels?.recurringDiscount ?? null,
-      recurringHeading: RECURRING_PLANS[s.slug]?.heading ?? null,
+      recurringHeading: s.isRecurringEligible ? RECURRING_HEADING : null,
       isRecurringEligible: s.isRecurringEligible ?? false,
     },
   });
-
-  // Resync the marketing "Recurring plans" cards (delete-and-recreate).
-  await prisma.serviceRecurringPlan.deleteMany({ where: { serviceId: service.id } });
-  const recurring = RECURRING_PLANS[s.slug];
-  if (recurring) {
-    await prisma.serviceRecurringPlan.createMany({
-      data: recurring.plans.map((p, pi) => ({
-        serviceId: service.id,
-        name: p.name,
-        freq: p.freq,
-        amount: p.amount,
-        unit: p.unit ?? null,
-        disc: p.disc ?? null,
-        best: p.best ?? false,
-        cta: p.cta,
-        sortOrder: pi,
-        active: true,
-      })),
-    });
-  }
 
   // Resync config (delete-and-recreate — safe: bookings snapshot keys, not ids).
   await prisma.serviceConfigGroup.deleteMany({ where: { serviceId: service.id } });
@@ -143,6 +139,7 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
         serviceId: service.id,
         key: g.key,
         label: g.label,
+        description: g.description ?? null,
         inputType: g.inputType as ConfigInputType,
         uiHint: g.uiHint ?? null,
         applies: ConfigApplies.FLAT,
@@ -151,6 +148,10 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
         status: ConfigStatus.ACTIVE,
         selectMin: g.selectMin ?? null,
         selectMax: g.selectMax ?? null,
+        quantityMin: g.quantityMin ?? null,
+        quantityMax: g.quantityMax ?? null,
+        unitLabel: g.unitLabel ?? null,
+        unitPrice: g.unitPrice ?? null,
         options: {
           create: (g.options ?? []).map((o, oi) => ({
             key: o.key,
@@ -164,23 +165,61 @@ async function seedService(s: SeedService, index: number, categoryId: string): P
       },
     });
   }
+  return service.id;
+}
 
-  // Resync rules.
-  await prisma.servicePricingRule.deleteMany({ where: { serviceId: service.id } });
-  for (const [ri, r] of s.rules.entries()) {
-    await prisma.servicePricingRule.create({
+/** Global cadences + the per-service recurring grid + admin-composed plans. */
+async function seedRecurringAndPlans(serviceIds: Map<string, string>): Promise<void> {
+  const cadenceIds = new Map<string, string>();
+  for (const [ci, c] of SEED_CADENCES.entries()) {
+    const row = await prisma.recurringCadence.upsert({
+      where: { key: c.key },
+      create: {
+        key: c.key,
+        label: c.label,
+        interval: c.interval as CadenceInterval,
+        intervalCount: c.intervalCount,
+        sortOrder: ci,
+        status: ConfigStatus.ACTIVE,
+      },
+      update: { label: c.label, sortOrder: ci, status: ConfigStatus.ACTIVE },
+    });
+    cadenceIds.set(c.key, row.id);
+  }
+
+  // Full service × cadence grid: one-time active everywhere at 0%; other
+  // cadences activate (with their %) only where SEED_RECURRING says so.
+  for (const s of SERVICES) {
+    const serviceId = serviceIds.get(s.slug)!;
+    for (const c of SEED_CADENCES) {
+      const pct = SEED_RECURRING[s.slug]?.[c.key];
+      const isActive = c.key === "one-time" ? true : pct != null;
+      await prisma.serviceRecurring.upsert({
+        where: { serviceId_cadenceId: { serviceId, cadenceId: cadenceIds.get(c.key)! } },
+        create: { serviceId, cadenceId: cadenceIds.get(c.key)!, discountPercent: pct ?? 0, isActive },
+        update: { discountPercent: pct ?? 0, isActive },
+      });
+    }
+  }
+
+  // Plans: delete-and-recreate for the seeded services (idempotent).
+  const seededServiceIds = [...serviceIds.values()];
+  await prisma.servicePlan.deleteMany({ where: { serviceId: { in: seededServiceIds } } });
+  for (const [pi, p] of SEED_PLANS.entries()) {
+    await prisma.servicePlan.create({
       data: {
-        serviceId: service.id,
-        key: r.key,
-        label: r.label,
-        trigger: r.trigger,
-        effect: r.effect,
-        sortOrder: r.sortOrder || ri,
+        serviceId: serviceIds.get(p.serviceSlug)!,
+        cadenceId: cadenceIds.get(p.cadenceKey)!,
+        name: p.name,
+        bullets: p.bullets,
+        price: p.price,
+        priceType: p.priceType as PlanPriceType,
+        featured: p.featured ?? false,
+        sortOrder: pi,
         status: ConfigStatus.ACTIVE,
       },
     });
   }
-  return service.id;
 }
 
 async function seedGeography(): Promise<Map<string, string>> {
@@ -289,6 +328,9 @@ async function main(): Promise<void> {
     serviceIds.set(s.slug, await seedService(s, i, categoryIds.get(s.categorySlug)!));
   }
   console.log(`✓ seeded ${categoryIds.size} categories, ${serviceIds.size} services`);
+
+  await seedRecurringAndPlans(serviceIds);
+  console.log(`✓ seeded ${SEED_CADENCES.length} cadences, recurring grid, ${SEED_PLANS.length} plans`);
 
   await seedMembershipPlans(serviceIds);
   console.log(`✓ seeded ${MEMBERSHIP_PLANS.length} membership plans (display-only)`);

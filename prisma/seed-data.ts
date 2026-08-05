@@ -15,24 +15,18 @@ export interface SeedOption {
 export interface SeedGroup {
   key: string;
   label: string;
+  description?: string; // admin-written blurb shown under the label
   inputType: SeedInputType;
   uiHint?: string | null;
   isRequired: boolean;
   selectMin?: number;
   selectMax?: number;
+  // QUANTITY groups: bounds + the pricing strategy (quantity × unitPrice).
+  quantityMin?: number;
+  quantityMax?: number;
+  unitLabel?: string; // e.g. "per hour"
+  unitPrice?: number; // cents per unit
   options?: SeedOption[];
-}
-
-export type SeedTrigger =
-  | { kind: "option_selected"; group: string; option: string }
-  | { kind: "min_selected"; group: string; count: number };
-
-export interface SeedRule {
-  key: string;
-  label: string;
-  trigger: SeedTrigger;
-  effect: { kind: "discount" | "fee"; calc: "percent" | "flat"; value: number };
-  sortOrder: number;
 }
 
 export interface SeedService {
@@ -51,7 +45,6 @@ export interface SeedService {
   badges?: string[];
   claimsBlock?: string;
   groups: SeedGroup[];
-  rules: SeedRule[];
 }
 
 export const CATEGORIES = [
@@ -80,75 +73,110 @@ export const MEMBERSHIP_PLANS: SeedMembershipPlan[] = [
   { key: "power-washing", name: "Power Washing", serviceSlug: "power-washing", interval: "MONTH", intervalCount: 3, fromPrice: 7900 },
 ];
 
-// Display labels for the pricing Compare table (admin-editable). recurringDiscount
-// null renders an em-dash.
-export const COMPARE_LABELS: Record<string, { typicalDuration: string; recurringDiscount: string | null }> = {
-  "cleaning": { typicalDuration: "2–3 hrs", recurringDiscount: "up to 15%" },
-  "lawn-care": { typicalDuration: "30–60 min", recurringDiscount: "up to 15%" },
-  "power-washing": { typicalDuration: "2–4 hrs", recurringDiscount: null },
-  "painting": { typicalDuration: "1–3 days", recurringDiscount: null },
-  "junk-removal": { typicalDuration: "1–2 hrs", recurringDiscount: null },
-  "pool": { typicalDuration: "45–60 min", recurringDiscount: "up to 10%" },
-  "pest-control": { typicalDuration: "~45 min", recurringDiscount: "up to 10%" },
-  "home-security": { typicalDuration: "Consultation", recurringDiscount: null },
-  "smart-home": { typicalDuration: "1–4 hrs", recurringDiscount: "15% (3+)" },
-  "handyman": { typicalDuration: "Per block", recurringDiscount: null },
-  "tree-stump": { typicalDuration: "Varies", recurringDiscount: null },
+// Display labels for the pricing Compare table (admin-editable). The
+// "Recurring discount up to X%" label is DERIVED from SEED_RECURRING now.
+export const COMPARE_LABELS: Record<string, { typicalDuration: string }> = {
+  "cleaning": { typicalDuration: "2–3 hrs" },
+  "lawn-care": { typicalDuration: "30–60 min" },
+  "power-washing": { typicalDuration: "2–4 hrs" },
+  "painting": { typicalDuration: "1–3 days" },
+  "junk-removal": { typicalDuration: "1–2 hrs" },
+  "pool": { typicalDuration: "45–60 min" },
+  "pest-control": { typicalDuration: "~45 min" },
+  "home-security": { typicalDuration: "Consultation" },
+  "smart-home": { typicalDuration: "1–4 hrs" },
+  "handyman": { typicalDuration: "Per block" },
+  "tree-stump": { typicalDuration: "Varies" },
 };
 
-// ── Service-page "Recurring plans" cards (admin-editable via /admin/recurring-plans).
-// Amounts are display strings only (never summed by the pricing engine).
-export interface SeedRecurringPlan {
-  name: string;
-  freq: string;
-  amount: string;
-  unit?: string;
-  disc?: string;
-  best?: boolean;
-  cta: string;
-}
-export interface SeedRecurringSection {
-  heading: string;
-  plans: SeedRecurringPlan[];
+// ── Recurring cadences (GLOBAL, admin-extendable) + per-service settings ──────
+
+export interface SeedCadence {
+  key: string;
+  label: string;
+  interval: "NONE" | "WEEK" | "MONTH";
+  intervalCount: number;
 }
 
-const DEFAULT_RECURRING_HEADING = "Book once. Never think about it again.";
-
-/** The standard one-time / weekly / biweekly trio most services show. */
-const stdRecurring = (amount: string): SeedRecurringPlan[] => [
-  { name: "One-time", freq: "Single visit", amount, cta: "Choose one-time" },
-  { name: "Weekly", freq: "Every week", amount, unit: "/visit", disc: "Save 15%", best: true, cta: "Choose weekly" },
-  { name: "Biweekly", freq: "Every 2 weeks", amount, unit: "/visit", disc: "Save 10%", cta: "Choose biweekly" },
+export const SEED_CADENCES: SeedCadence[] = [
+  { key: "one-time", label: "One-time", interval: "NONE", intervalCount: 1 },
+  { key: "weekly", label: "Weekly", interval: "WEEK", intervalCount: 1 },
+  { key: "biweekly", label: "Every two weeks", interval: "WEEK", intervalCount: 2 },
+  { key: "monthly", label: "Monthly", interval: "MONTH", intervalCount: 1 },
 ];
 
-export const RECURRING_PLANS: Record<string, SeedRecurringSection> = {
-  "cleaning": {
-    heading: DEFAULT_RECURRING_HEADING,
-    plans: [
-      { name: "One-time", freq: "Single visit", amount: "$170", cta: "Choose one-time" },
-      { name: "Weekly", freq: "Every week", amount: "$133", unit: "/visit", disc: "Save 22%", best: true, cta: "Choose weekly" },
-      { name: "Biweekly", freq: "Every 2 weeks", amount: "$145", unit: "/visit", disc: "Save 15%", cta: "Choose biweekly" },
-      { name: "Monthly", freq: "Every month", amount: "$156", unit: "/visit", disc: "Save 8%", cta: "Choose monthly" },
-    ],
-  },
-  "lawn-care": {
-    heading: "Book once. Never chase a mow again.",
-    plans: [
-      { name: "One-time", freq: "Single visit", amount: "$59", cta: "Choose one-time" },
-      { name: "Weekly", freq: "Every week", amount: "$53", unit: "/visit", disc: "Save 10%", best: true, cta: "Choose weekly" },
-      { name: "Biweekly", freq: "Every 2 weeks", amount: "$56", unit: "/visit", disc: "Save 5%", cta: "Choose biweekly" },
-    ],
-  },
-  "power-washing": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$79") },
-  "painting": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$349") },
-  "junk-removal": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$99") },
-  "pool": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$119") },
-  "pest-control": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$99") },
-  "home-security": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$199") },
-  "smart-home": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$149") },
-  "handyman": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$95") },
-  "tree-stump": { heading: DEFAULT_RECURRING_HEADING, plans: stdRecurring("$199") },
+/**
+ * Per-service cadence settings: which cadences are offered and the % that comes
+ * off the configured pre-tax total — THE discount mechanism. One-time is active
+ * for every service automatically (seed.ts); rows here activate the rest.
+ * Values marked SAMPLE await product sign-off.
+ */
+export const SEED_RECURRING: Record<string, Record<string, number>> = {
+  "cleaning": { weekly: 20, biweekly: 15, monthly: 10 },
+  "lawn-care": { weekly: 10, biweekly: 5 },
+  "pool": { weekly: 15, biweekly: 10, monthly: 5 }, // SAMPLE (was flat deltas)
+  "pest-control": { monthly: 10 },
 };
+
+export const RECURRING_HEADING = "Book once. Never think about it again.";
+
+// ── Plans (admin-composed; price is the BINDING pre-tax billing amount) ───────
+
+export interface SeedPlan {
+  serviceSlug: string;
+  cadenceKey: string;
+  name: string;
+  bullets: string[]; // max 4
+  price: number; // cents
+  priceType: "PER_VISIT" | "PER_MONTH" | "FLAT";
+  featured?: boolean;
+}
+
+export const SEED_PLANS: SeedPlan[] = [
+  {
+    serviceSlug: "cleaning",
+    cadenceKey: "weekly",
+    name: "Weekly Clean",
+    bullets: ["Standard clean, every week", "Same vetted cleaner", "Supplies included", "Priority scheduling"],
+    price: 13300,
+    priceType: "PER_VISIT",
+    featured: true,
+  },
+  {
+    serviceSlug: "cleaning",
+    cadenceKey: "biweekly",
+    name: "Biweekly Clean",
+    bullets: ["Standard clean, every two weeks", "Same vetted cleaner", "Supplies included"],
+    price: 14500,
+    priceType: "PER_VISIT",
+  },
+  {
+    serviceSlug: "lawn-care",
+    cadenceKey: "weekly",
+    name: "Weekly Lawn Care",
+    bullets: ["Mow, edge, trim & blow", "Seasonal height adjustments", "Priority weather rescheduling", "Same crew each visit"],
+    price: 5300,
+    priceType: "PER_VISIT",
+    featured: true,
+  },
+  {
+    serviceSlug: "lawn-care",
+    cadenceKey: "biweekly",
+    name: "Biweekly Lawn Care",
+    bullets: ["Mow, edge, trim & blow", "Seasonal height adjustments", "Same crew each visit"],
+    price: 5600,
+    priceType: "PER_VISIT",
+  },
+  {
+    serviceSlug: "pool",
+    cadenceKey: "weekly",
+    name: "Weekly Pool Care",
+    bullets: ["Skim, vacuum & brush", "Chemical balancing", "Equipment health check", "Same tech each visit"],
+    price: 9900,
+    priceType: "PER_VISIT",
+    featured: true,
+  },
+];
 
 // Deltas are increments over the 1-bed/1-bath baseline (already in basePrice),
 // so the cheapest configuration prices at exactly the listed base.
@@ -189,24 +217,8 @@ export const SERVICES: SeedService[] = [
       },
       { key: "bedrooms", label: "Bedrooms", inputType: "SELECT", uiHint: "matrix-axis", isRequired: true, options: bedroomsOptions },
       { key: "bathrooms", label: "Bathrooms", inputType: "SELECT", uiHint: "matrix-axis", isRequired: true, options: bathroomsOptions },
-      {
-        key: "frequency",
-        label: "Frequency",
-        inputType: "SELECT",
-        uiHint: "frequency",
-        isRequired: true,
-        options: [
-          { key: "one-time", label: "One-time", delta: 0 },
-          { key: "weekly", label: "Weekly", sublabel: "Save 20% (SAMPLE)", delta: 0 },
-          { key: "biweekly", label: "Every two weeks", sublabel: "Save 15% (SAMPLE)", delta: 0 },
-          { key: "monthly", label: "Monthly", sublabel: "Save 10% (SAMPLE)", delta: 0 },
-        ],
-      },
-    ],
-    rules: [
-      { key: "freq-weekly-discount", label: "Weekly plan discount", trigger: { kind: "option_selected", group: "frequency", option: "weekly" }, effect: { kind: "discount", calc: "percent", value: 20 }, sortOrder: 1 },
-      { key: "freq-biweekly-discount", label: "Bi-weekly plan discount", trigger: { kind: "option_selected", group: "frequency", option: "biweekly" }, effect: { kind: "discount", calc: "percent", value: 15 }, sortOrder: 2 },
-      { key: "freq-monthly-discount", label: "Monthly plan discount", trigger: { kind: "option_selected", group: "frequency", option: "monthly" }, effect: { kind: "discount", calc: "percent", value: 10 }, sortOrder: 3 },
+      // Frequency is no longer a configuration group — the /book frequency
+      // section renders from SEED_RECURRING (cadence % is the discount).
     ],
   },
   {
@@ -242,22 +254,6 @@ export const SERVICES: SeedService[] = [
           { key: "full", label: "Full care +", delta: 1500 },
         ],
       },
-      {
-        key: "frequency",
-        label: "Frequency",
-        inputType: "SELECT",
-        uiHint: "frequency",
-        isRequired: true,
-        options: [
-          { key: "one-time", label: "One-time", delta: 0 },
-          { key: "weekly", label: "Weekly", sublabel: "Save 10%", delta: 0 },
-          { key: "biweekly", label: "Every two weeks", sublabel: "Save 5%", delta: 0 },
-        ],
-      },
-    ],
-    rules: [
-      { key: "lawn-weekly-discount", label: "Weekly plan discount", trigger: { kind: "option_selected", group: "frequency", option: "weekly" }, effect: { kind: "discount", calc: "percent", value: 10 }, sortOrder: 1 },
-      { key: "lawn-biweekly-discount", label: "Bi-weekly plan discount", trigger: { kind: "option_selected", group: "frequency", option: "biweekly" }, effect: { kind: "discount", calc: "percent", value: 5 }, sortOrder: 2 },
     ],
   },
   {
@@ -268,21 +264,8 @@ export const SERVICES: SeedService[] = [
     categorySlug: "recurring-core",
     mode: "FROM",
     isRecurringEligible: true,
-    basePrice: 9900, // "from $99": a weekly standard clean costs exactly this per visit
+    basePrice: 9900, // "from $99": a standard clean costs exactly this per visit
     groups: [
-      {
-        key: "frequency",
-        label: "Service frequency",
-        inputType: "SELECT",
-        uiHint: "frequency",
-        isRequired: true,
-        options: [
-          { key: "one-time", label: "One-time", delta: 3000 },
-          { key: "weekly", label: "Weekly", delta: 0 },
-          { key: "biweekly", label: "Every two weeks", delta: 1000 },
-          { key: "monthly", label: "Monthly", delta: 2000 },
-        ],
-      },
       {
         key: "type",
         label: "Service type",
@@ -294,7 +277,6 @@ export const SERVICES: SeedService[] = [
         ],
       },
     ],
-    rules: [],
   },
   {
     slug: "pest-control",
@@ -330,7 +312,6 @@ export const SERVICES: SeedService[] = [
         ],
       },
     ],
-    rules: [],
   },
   {
     slug: "junk-removal",
@@ -354,7 +335,6 @@ export const SERVICES: SeedService[] = [
         ],
       },
     ],
-    rules: [],
   },
   {
     slug: "smart-home",
@@ -381,9 +361,8 @@ export const SERVICES: SeedService[] = [
         ],
       },
     ],
-    rules: [
-      { key: "multi-device-discount", label: "3+ device bundle discount", trigger: { kind: "min_selected", group: "devices", count: 3 }, effect: { kind: "discount", calc: "percent", value: 15 }, sortOrder: 1 },
-    ],
+    // The "3+ devices -> 15%" bundle rule died with the rules engine (discounts
+    // are cadence-% only now, by decision). Re-expressible when promos land.
   },
   {
     slug: "power-washing",
@@ -410,7 +389,6 @@ export const SERVICES: SeedService[] = [
         ],
       },
     ],
-    rules: [],
   },
   {
     slug: "handyman",
@@ -419,14 +397,14 @@ export const SERVICES: SeedService[] = [
     description: "From small repairs to fixture installs and TV mounting.",
     categorySlug: "one-time",
     mode: "FROM",
-    // $95/hr; engine multiplies by quantity = estimated hours. Deliberately NOT
-    // set from the old $150 compare-table teaser: this base carries engine
-    // meaning, so the site now lists "from $95" (one honest hour).
+    // "from $95": the base covers the first hour (the call-out minimum); extra
+    // time is the quantity group below at its own per-hour unit price.
     basePrice: 9500,
     groups: [
       {
         key: "kind",
         label: "Task type",
+        description: "What kind of work is it? All task types bill the same hourly rate.",
         inputType: "SELECT",
         isRequired: true,
         options: [
@@ -436,8 +414,18 @@ export const SERVICES: SeedService[] = [
           { key: "multi", label: "Punch list", delta: 0 },
         ],
       },
+      {
+        key: "additional-hours",
+        label: "Additional hours",
+        description: "The first hour is included in the base price.",
+        inputType: "QUANTITY",
+        isRequired: false,
+        quantityMin: 0,
+        quantityMax: 7,
+        unitLabel: "per hour",
+        unitPrice: 9500,
+      },
     ],
-    rules: [],
   },
   {
     slug: "painting",
@@ -449,7 +437,6 @@ export const SERVICES: SeedService[] = [
     groups: [
       { key: "description", label: "Tell us about your project", inputType: "TEXTAREA", isRequired: true },
     ],
-    rules: [],
   },
   {
     slug: "home-security",
@@ -462,7 +449,6 @@ export const SERVICES: SeedService[] = [
     groups: [
       { key: "description", label: "Tell us about your home and goals", inputType: "TEXTAREA", isRequired: true },
     ],
-    rules: [],
   },
   {
     slug: "tree-stump",
@@ -475,7 +461,6 @@ export const SERVICES: SeedService[] = [
     groups: [
       { key: "description", label: "Describe the tree or stump work", inputType: "TEXTAREA", isRequired: true },
     ],
-    rules: [],
   },
 ];
 

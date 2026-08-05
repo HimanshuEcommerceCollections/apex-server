@@ -1,52 +1,77 @@
-import type { PricingMode } from "../../enums";
+import type { CadenceInterval, ConfigInputType, ConfigStatus, PlanPriceType, PricingMode } from "../../enums";
 
 export interface EditOption {
   id: string;
   key: string;
   label: string;
+  sublabel: string | null;
   priceDelta: number;
-  status: string;
+  sortOrder: number;
+  status: ConfigStatus;
 }
+
 export interface EditGroup {
+  id: string;
   key: string;
   label: string;
-  inputType: string;
-  status: string;
+  description: string | null;
+  inputType: ConfigInputType;
+  isRequired: boolean;
+  selectMin: number | null;
+  selectMax: number | null;
+  quantityMin: number | null;
+  quantityMax: number | null;
+  unitLabel: string | null;
+  unitPrice: number | null;
+  sortOrder: number;
+  status: ConfigStatus;
   options: EditOption[];
 }
-export interface EditRule {
-  id: string;
+
+/** One row of the service × cadence grid (every ACTIVE global cadence appears). */
+export interface EditRecurringRow {
+  cadenceId: string;
   key: string;
   label: string;
-  kind: string; // "discount" | "fee"
-  calc: string; // "percent" | "flat"
-  value: number;
+  discountPercent: number;
+  isActive: boolean;
 }
-export interface RecurringPlanEditView {
-  id: string;
-  name: string;
-  freq: string;
-  amount: string;
-  unit: string | null;
-  disc: string | null;
-  best: boolean;
-  cta: string;
-}
-export interface RecurringEditView {
-  serviceSlug: string;
-  serviceName: string;
-  heading: string | null;
-  plans: RecurringPlanEditView[];
-}
+
 export interface ServiceEditView {
   id: string;
   slug: string;
   name: string;
   pricingMode: PricingMode;
   basePrice: number;
+  taxRateBps: number;
   currency: string;
   typicalDuration: string | null;
-  recurringDiscount: string | null;
   groups: EditGroup[];
-  rules: EditRule[];
+  recurring: EditRecurringRow[];
+}
+
+export interface CadenceView {
+  id: string;
+  key: string;
+  label: string;
+  interval: CadenceInterval;
+  intervalCount: number;
+  sortOrder: number;
+  status: ConfigStatus;
+}
+
+export interface PlanView {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  serviceSlug: string;
+  cadenceId: string;
+  cadenceLabel: string;
+  name: string;
+  bullets: string[];
+  price: number;
+  priceType: PlanPriceType;
+  featured: boolean;
+  sortOrder: number;
+  status: ConfigStatus;
 }
