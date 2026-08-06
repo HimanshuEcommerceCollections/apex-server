@@ -7,7 +7,12 @@ export class BookingsController {
   // 200 for BOTH arms (BOOKED | WAITLISTED); the client branches on data.outcome.
   create = async (req: Request, res: Response) => {
     const result = await bookingsService.submit(req.user!.id, req.body as CreateBookingDto);
-    sendSuccess(res, result, result.outcome === "BOOKED" ? "Booking received" : "Added to the waitlist");
+    const MESSAGE = {
+      BOOKED: "Booking received",
+      CHECKOUT: "Continue to secure checkout",
+      WAITLISTED: "Added to the waitlist",
+    } as const;
+    sendSuccess(res, result, MESSAGE[result.outcome]);
   };
 
   listMine = async (req: Request, res: Response) => {
