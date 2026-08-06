@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { ConfigStatus } from "../../enums";
 import {
   catalogRepository,
   type PricingUpdate,
@@ -230,6 +231,13 @@ export class CatalogService {
   async patchCadence(id: string, dto: Prisma.RecurringCadenceUncheckedUpdateInput, actor: Actor): Promise<CadenceView> {
     const cadence = await catalogRepository.findCadence(id);
     if (!cadence) throw ApiError.notFound("Cadence not found", { code: "CADENCE_NOT_FOUND" });
+    // Every booking points at the one-time cadence, so deactivating it would
+    // break booking creation outright. Relabelling it is fine.
+    if (cadence.isSystem && dto.status && dto.status !== ConfigStatus.ACTIVE) {
+      throw ApiError.badRequest("The one-time frequency can't be deactivated — every booking depends on it", {
+        code: "CADENCE_IS_SYSTEM",
+      });
+    }
     const before = { label: cadence.label, status: cadence.status };
     const updated = await catalogRepository.updateCadence(id, dto);
     await this.audit(actor, "catalog.cadence.update", id, before, { label: updated.label, status: updated.status });

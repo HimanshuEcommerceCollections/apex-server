@@ -78,10 +78,18 @@ export class MembershipsService {
     const membership = await membershipsRepository.createMembership({
       userId,
       planId: plan.id,
+      // Copied from the plan so billing reads the interval from one place,
+      // whether or not a plan is involved.
+      cadenceId: plan.cadenceId,
       serviceId: plan.serviceId,
       status: MembershipStatus.INCOMPLETE,
       stripeSubscriptionId: `pending_${randomToken(16)}`,
       configuration: config as unknown as Prisma.InputJsonValue,
+      // Charge snapshot: a plan's price is binding, so freeze it here rather
+      // than re-reading it each cycle.
+      amount: plan.price,
+      discountPercent: 0,
+      taxRateBps: plan.service?.taxRateBps ?? 0,
     });
 
     const stripe = getStripe();
@@ -95,6 +103,123 @@ export class MembershipsService {
       cancel_url: `${env.CLIENT_BASE_URL}/membership-plans?canceled=1`,
     });
     return { checkout_url: session.url };
+  }
+
+  /**
+   * CONFIGURATION-BASED subscription: the customer configured a job on a
+   * service page and chose a recurring payment frequency. There is no
+   * ServicePlan — `amount` (the discounted configured total) is the binding
+   * per-cycle price, and the cadence's own $0 anchor price carries the
+   * interval. Called by the bookings intake fork, never by the client directly.
+   */
+  async subscribeFromConfiguration(input: {
+    userId: string;
+    serviceId: string;
+    cadence: { cadenceId: string; key: string; label: string; discountPercent: number };
+    selections: Record<string, string | number | boolean | string[]>;
+    quantity: number;
+    address: { street: string; city: string; state: string; zip: string };
+    amount: number | null;
+    currency: string;
+    taxRateBps: number;
+  }): Promise<{ checkout_url: string; membership_id: string }> {
+    // A recurring commitment needs a binding number. QUOTE services price at
+    // the coordinator's discretion, so they cannot start one from the estimator.
+    if (input.amount == null || input.amount <= 0) {
+      throw ApiError.badRequest("This service can't be subscribed to from an estimate", {
+        code: "SUBSCRIPTION_REQUIRES_PRICE",
+      });
+    }
+
+    const anchor = await this.ensureCadenceWiring(input.serviceId, input.cadence.cadenceId);
+    if (!anchor) {
+      throw ApiError.badRequest("Recurring payment isn't available for this service yet", {
+        code: "CADENCE_NOT_SUBSCRIBABLE",
+      });
+    }
+
+    const user = await usersService.getById(input.userId);
+    if (!user) throw ApiError.notFound("User not found", { code: "USER_NOT_FOUND" });
+    const customerId = await this.ensureCustomer(input.userId);
+
+    const config: MembershipConfig = {
+      selections: input.selections,
+      quantity: input.quantity,
+      address: input.address,
+      contact: { name: user.name, email: user.email, phone: user.phone },
+    };
+    const membership = await membershipsRepository.createMembership({
+      userId: input.userId,
+      planId: null, // configuration-based: no package behind it
+      cadenceId: input.cadence.cadenceId,
+      serviceId: input.serviceId,
+      status: MembershipStatus.INCOMPLETE,
+      stripeSubscriptionId: `pending_${randomToken(16)}`,
+      configuration: config as unknown as Prisma.InputJsonValue,
+      currency: input.currency,
+      // Snapshot: the discounted total and the rate that produced it. A later
+      // catalog edit must not silently re-price a live subscription.
+      amount: input.amount,
+      discountPercent: input.cadence.discountPercent,
+      taxRateBps: input.taxRateBps,
+    });
+
+    const session = await getStripe().checkout.sessions.create({
+      mode: "subscription",
+      customer: customerId,
+      line_items: [{ price: anchor, quantity: 1 }],
+      subscription_data: { metadata: { ...brandMetadata(), membershipId: membership.id } },
+      metadata: { ...brandMetadata(), membershipId: membership.id },
+      success_url: `${env.CLIENT_BASE_URL}/my-bookings?membership=success`,
+      cancel_url: `${env.CLIENT_BASE_URL}/book?canceled=1`,
+    });
+    if (!session.url) {
+      throw ApiError.badRequest("Checkout couldn't be started", { code: "CHECKOUT_FAILED" });
+    }
+    return { checkout_url: session.url, membership_id: membership.id };
+  }
+
+  /**
+   * Provision (once) the $0 anchor price carrying a cadence's interval for a
+   * service, mirroring how plans are wired: the binding amount is added per
+   * cycle as an invoice item, so price changes never need a Stripe round-trip.
+   * Returns the price id, or null when Stripe isn't configured/reachable.
+   */
+  private async ensureCadenceWiring(serviceId: string, cadenceId: string): Promise<string | null> {
+    if (!env.STRIPE_SECRET_KEY) return null;
+    const row = await membershipsRepository.findServiceRecurring(serviceId, cadenceId);
+    if (!row || !row.isActive || row.cadence.interval === "NONE") return null;
+    if (row.stripePriceId) return row.stripePriceId;
+
+    try {
+      const stripe = getStripe();
+      const productId =
+        row.stripeProductId ??
+        (
+          await stripe.products.create({
+            name: `${row.service.name} — ${row.cadence.label}`,
+            metadata: { ...brandMetadata(), serviceId, cadenceId },
+          })
+        ).id;
+      const price = await stripe.prices.create({
+        product: productId,
+        unit_amount: 0, // anchor only; the real amount bills per cycle as an invoice item
+        currency: row.service.currency.toLowerCase(),
+        recurring: {
+          interval: row.cadence.interval.toLowerCase() as "week" | "month",
+          interval_count: row.cadence.intervalCount,
+        },
+        metadata: brandMetadata(),
+      });
+      await membershipsRepository.updateServiceRecurring(row.id, {
+        stripeProductId: productId,
+        stripePriceId: price.id,
+      });
+      return price.id;
+    } catch (err) {
+      logger.error(`[membership] cadence wiring failed for ${serviceId}/${cadenceId}: ${String(err)}`);
+      return null;
+    }
   }
 
   async listMine(userId: string): Promise<MembershipView[]> {
@@ -147,11 +272,18 @@ export class MembershipsService {
         if (!sub) return;
         const membership = await membershipsRepository.findMembershipBySubscription(sub);
         if (!membership) return;
-        // The plan's price is BINDING — every cycle invoices exactly this, plus
-        // the service's tax as its own line (rate read at billing time).
-        const amount = membership.plan.price;
-        const taxBps = membership.service?.taxRateBps ?? 0;
+        // Bill the SNAPSHOT taken at signup, not today's catalog. Works for
+        // both flavours: a plan-backed membership froze plan.price, a
+        // configuration-based one froze the discounted configured total. The
+        // plan.price fallback only covers rows predating the snapshot column.
+        const amount = membership.amount ?? membership.plan?.price ?? 0;
+        if (amount <= 0) {
+          logger.error(`[membership] ${membership.id} has no billable amount — invoice ${inv.id} left empty`);
+          return;
+        }
+        const taxBps = membership.taxRateBps;
         const tax = Math.round((amount * taxBps) / 10000);
+        const label = membership.plan?.name ?? `${membership.service?.name ?? "Service"} — ${membership.cadence.label}`;
         const stripe = getStripe();
         await stripe.invoiceItems.create(
           {
@@ -159,7 +291,7 @@ export class MembershipsService {
             invoice: inv.id,
             amount,
             currency: membership.currency.toLowerCase(),
-            description: `${membership.plan.name} — service for this billing cycle`,
+            description: `${label} — service for this billing cycle`,
           },
           { idempotencyKey: idemKey(`invitem_${inv.id}`) },
         );
@@ -209,6 +341,10 @@ export class MembershipsService {
           quantity: config.quantity,
           amount: inv.amount_paid,
           currency,
+          // The visit inherits the subscription's frequency and the discount
+          // that was locked in at signup.
+          cadenceId: membership.cadenceId,
+          discountPercent: membership.discountPercent,
         });
         await membershipsRepository.updateMembership(membership.id, { status: MembershipStatus.ACTIVE });
         break;

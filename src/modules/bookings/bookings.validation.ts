@@ -10,6 +10,12 @@ const contactMethod = z.preprocess(
 export const createBookingSchema = z.object({
   request_id: z.string().uuid().optional(),
   service_type: z.string().min(1), // service slug or id; the server derives quote_request from its mode
+  /**
+   * Chosen payment frequency. Omitted = one-time. A recurring cadence makes
+   * this request a SUBSCRIPTION: the response is a Checkout redirect, not a
+   * booking reference.
+   */
+  cadence_id: z.string().uuid().optional(),
   configuration: z.object({
     selections: selectionsSchema.default({}),
     quantity: z.coerce.number().int().positive().optional(),

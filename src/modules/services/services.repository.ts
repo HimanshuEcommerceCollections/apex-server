@@ -12,19 +12,20 @@ const withCategory = {
   },
 } satisfies Prisma.ServiceInclude;
 
-// Detail also pulls the active Plans (admin-composed, binding prices) for the
-// service page's plans section, plus each plan's cadence and the service's
-// recurring rows so "Save X%" can be shown per cadence.
+// Detail pulls the full Recurring grid — the payment frequencies this service
+// offers and the % each takes off the configured total. That grid is what the
+// service page's "Recurring plans" cards AND its estimator's Frequency control
+// are both built from.
+//
+// Plans are deliberately NOT included: a ServicePlan is a package of benefits,
+// a separate concept that lives on /membership-plans. Service pages used to
+// render Plans here, which conflated the two.
 const withDetail = {
   category: { select: { slug: true, name: true } },
   recurring: {
     where: { isActive: true, cadence: { status: ConfigStatus.ACTIVE } },
-    select: { cadenceId: true, discountPercent: true },
-  },
-  plans: {
-    where: { status: ConfigStatus.ACTIVE },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     include: { cadence: true },
+    orderBy: { cadence: { sortOrder: "asc" } },
   },
 } satisfies Prisma.ServiceInclude;
 

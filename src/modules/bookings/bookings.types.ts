@@ -25,6 +25,10 @@ export interface BookedCreateInput {
   priced: DisplayedPrice | null;
   /** Charge snapshot: rate as-of-booking; amounts null for QUOTE until quoted. */
   tax: { taxRateBps: number; taxAmount: number | null; grandTotal: number | null };
+  /** Payment frequency + the discount % actually applied, snapshotted. */
+  cadence: { cadenceId: string; discountPercent: number };
+  /** Set when this booking is a subscription's visit rather than a one-off. */
+  membershipId?: string | null;
   notes?: string | null;
 }
 
@@ -42,7 +46,19 @@ export interface WaitlistedResult {
   waitlist_signup: WaitlistSignupResponse;
 }
 
-export type BookingSubmitResult = BookedResult | WaitlistedResult;
+/**
+ * The customer chose a recurring payment frequency, so this is a subscription
+ * rather than a pay-at-booking booking. No Booking row exists yet — the first
+ * visit is created by the invoice.paid webhook once Checkout completes.
+ */
+export interface CheckoutResult {
+  outcome: "CHECKOUT";
+  checkout_url: string;
+  membership_id: string;
+  cadence: { key: string; label: string; discountPercent: number };
+}
+
+export type BookingSubmitResult = BookedResult | WaitlistedResult | CheckoutResult;
 
 export interface MyBookingSummary {
   reference: string;

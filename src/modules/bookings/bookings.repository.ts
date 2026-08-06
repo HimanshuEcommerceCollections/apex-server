@@ -21,6 +21,11 @@ export class BookingsRepository {
               clientRequestId: input.clientRequestId ?? null,
               serviceId: input.serviceId,
               customerId: input.customerId,
+              // Payment frequency this booking was made under (one-time unless
+              // the customer chose a recurring one) + the % actually applied.
+              cadenceId: input.cadence.cadenceId,
+              recurringDiscountPercent: input.cadence.discountPercent,
+              membershipId: input.membershipId ?? null,
               // FROM is pay-at-booking: born AWAITING_PAYMENT with an auto-cancel
               // deadline. QUOTE stays PENDING — coordinator-controlled lifecycle.
               status: isQuote ? BookingStatus.PENDING : BookingStatus.AWAITING_PAYMENT,
@@ -172,6 +177,9 @@ export class BookingsRepository {
     quantity: number;
     amount: number;
     currency: string;
+    /** Inherited from the membership — the frequency this visit is billed at. */
+    cadenceId: string;
+    discountPercent: number;
   }) {
     return withTxRetry(() =>
       prisma.$transaction(async (tx) => {
@@ -182,6 +190,8 @@ export class BookingsRepository {
             serviceId: input.serviceId,
             customerId: input.customerId,
             membershipId: input.membershipId,
+            cadenceId: input.cadenceId,
+            recurringDiscountPercent: input.discountPercent,
             status: BookingStatus.PAID, // paid by the membership invoice that created it
             source: BookingSource.SUBSCRIPTION,
             contactName: input.contact.name,

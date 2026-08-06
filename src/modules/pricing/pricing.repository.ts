@@ -1,5 +1,6 @@
 import { prisma } from "../../db/client";
 import { ConfigStatus } from "../../enums";
+import { ONE_TIME_CADENCE_KEY } from "../../constants";
 
 class PricingRepository {
   /** Service by id OR slug with everything pricing needs, in one query. */
@@ -17,8 +18,20 @@ class PricingRepository {
             },
           },
         },
+        // The Recurring grid: which payment frequencies this service offers and
+        // the % each takes off the configured pre-tax total.
+        recurring: {
+          where: { isActive: true, cadence: { status: ConfigStatus.ACTIVE } },
+          include: { cadence: true },
+          orderBy: { cadence: { sortOrder: "asc" } },
+        },
       },
     });
+  }
+
+  /** The system one-time cadence — the default every booking falls back to. */
+  findOneTimeCadence() {
+    return prisma.recurringCadence.findUnique({ where: { key: ONE_TIME_CADENCE_KEY } });
   }
 }
 

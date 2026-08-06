@@ -1,10 +1,17 @@
-import { ServiceStatus } from "../../enums";
+import { CadenceInterval, ServiceStatus } from "../../enums";
 import { ApiError } from "../../utils/api-error";
 import { servicesRepository, type ServiceWithCategory, type ServiceWithDetail } from "./services.repository";
 import type { ServiceDetail, ServiceListItem } from "./services.types";
 
 /** DRAFT/INACTIVE services are hidden from the public catalog. */
 const HIDDEN = new Set<ServiceStatus>([ServiceStatus.DRAFT, ServiceStatus.INACTIVE]);
+
+/** "Every week", "Every 2 weeks", "Every 3 months" — the card's sub-line. */
+function cadencePhrase(interval: CadenceInterval, count: number): string {
+  if (interval === CadenceInterval.NONE) return "Single visit";
+  const unit = interval === CadenceInterval.WEEK ? "week" : "month";
+  return count === 1 ? `Every ${unit}` : `Every ${count} ${unit}s`;
+}
 
 export class ServicesService {
   async list(args: { status?: ServiceStatus; categorySlug?: string }): Promise<ServiceListItem[]> {
@@ -45,8 +52,8 @@ export class ServicesService {
   }
 
   private serializeDetail(r: ServiceWithDetail): ServiceDetail {
-    const pctByCadence = new Map(r.recurring.map((x) => [x.cadenceId, x.discountPercent]));
-    const UNIT: Record<string, string | null> = { PER_VISIT: "/visit", PER_MONTH: "/mo", FLAT: null };
+    // The deepest discount is the one worth highlighting.
+    const best = r.recurring.reduce((max, x) => Math.max(max, x.discountPercent), 0);
     return {
       ...this.serializeListItem(r),
       categoryId: r.categoryId,
@@ -55,23 +62,28 @@ export class ServicesService {
       basePrice: r.basePrice,
       claimsBlock: r.claimsBlock,
       recurringHeading: r.recurringHeading,
-      // Admin-composed Plans on the legacy card wire shape, so the marketing
-      // pages keep rendering untouched. `amount` is the plan's BINDING pre-tax
-      // price (no longer decorative free text).
-      recurringPlans: r.plans.map((p) => {
-        const pct = pctByCadence.get(p.cadenceId) ?? 0;
-        return {
-          id: p.id,
-          name: p.name,
-          freq: p.cadence.label,
-          amount: `$${Math.round(p.price / 100)}`,
-          unit: UNIT[p.priceType] ?? null,
-          disc: pct > 0 ? `Save ${pct}%` : null,
-          best: p.featured,
-          cta: `Choose ${p.name.toLowerCase()}`,
-          bullets: p.bullets,
-        };
-      }),
+      /**
+       * The payment frequencies this service offers. One list, two consumers:
+       * the display-only "Recurring plans" cards and the estimator's Frequency
+       * control. `amount` is the base price with the cadence's discount applied
+       * — an illustration of the saving, not a binding quote (the configured
+       * total is), so it is null when the service lists no from-price.
+       */
+      recurringOptions: r.recurring.map((x) => ({
+        cadenceId: x.cadenceId,
+        key: x.cadence.key,
+        label: x.cadence.label,
+        freq: cadencePhrase(x.cadence.interval, x.cadence.intervalCount),
+        discountPercent: x.discountPercent,
+        disc: x.discountPercent > 0 ? `Save ${x.discountPercent}%` : null,
+        amount:
+          r.basePrice > 0
+            ? `$${Math.round((r.basePrice * (100 - x.discountPercent)) / 100 / 100)}`
+            : null,
+        unit: r.basePrice > 0 ? "/visit" : null,
+        isSubscription: x.cadence.interval !== CadenceInterval.NONE,
+        best: x.discountPercent > 0 && x.discountPercent === best,
+      })),
     };
   }
 }

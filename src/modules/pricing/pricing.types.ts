@@ -6,10 +6,16 @@ export interface PricePreviewInput {
   quantity?: number;
   /** QUOTE project text (supplied by the booking pipeline, not the preview body). */
   description?: string;
+  /**
+   * Chosen payment frequency. Omitted = one-time. Must be a frequency the
+   * service actively offers, otherwise the request is rejected.
+   */
+  cadenceId?: string;
 }
 
 export type {
   PricePreview,
+  PricingCadence,
   PricingModeContext,
   PricingModeHandler,
   PricingServiceMeta,

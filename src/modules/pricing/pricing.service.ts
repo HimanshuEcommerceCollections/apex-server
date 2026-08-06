@@ -1,10 +1,15 @@
-import { ServiceStatus } from "../../enums";
+import { CadenceInterval, ServiceStatus } from "../../enums";
+import { ONE_TIME_CADENCE_KEY } from "../../constants";
 import { ApiError } from "../../utils/api-error";
 import type { DisplayedPrice } from "./engine/types";
 import { buildPricingTable } from "./build-pricing-table";
 import { getPricingModeHandler } from "./modes/registry";
+import type { PricingCadence } from "./modes/handler.types";
 import type { PricePreview, PricePreviewInput, PricingModeContext } from "./pricing.types";
 import { pricingRepository } from "./pricing.repository";
+
+/** The fully-included Service row the pricing pipeline works from. */
+type ServiceForPricing = NonNullable<Awaited<ReturnType<typeof pricingRepository.findServiceForPricing>>>;
 
 /**
  * Compare the server-recomputed price against the client-sent displayed_price.
@@ -54,11 +59,13 @@ class PricingService {
     idOrSlug: string,
     input: PricePreviewInput,
     clientPrice: DisplayedPrice | null,
-  ): Promise<DisplayedPrice | null> {
+  ): Promise<{ price: DisplayedPrice | null; cadence: PricingCadence }> {
     const ctx = await this.buildContext(idOrSlug, input);
     const recomputed = getPricingModeHandler(ctx.service.pricingMode).recompute(ctx);
     assertPriceIntegrity(recomputed, clientPrice);
-    return recomputed;
+    // The cadence comes back too: it decides whether the caller books-and-charges
+    // or starts a subscription, and its % is snapshotted onto whichever it makes.
+    return { price: recomputed, cadence: ctx.cadence };
   }
 
   /**
@@ -114,7 +121,65 @@ class PricingService {
         quantity: input.quantity ?? 1,
         description: input.description,
       },
+      cadence: await this.resolveCadence(service.recurring, input.cadenceId),
     };
+  }
+
+  /**
+   * Resolve the requested payment frequency against the service's Recurring
+   * grid.
+   *
+   * One-time is always available, whether or not the admin listed it in the
+   * grid — it is the floor, not an offer. Any OTHER frequency must be actively
+   * offered by this service; an unknown or unoffered one is REJECTED rather
+   * than quietly downgraded to one-time, because silently charging full price
+   * for a frequency the customer chose is a worse failure than a 400.
+   */
+  private async resolveCadence(
+    offered: ServiceForPricing["recurring"],
+    cadenceId?: string,
+  ): Promise<PricingCadence> {
+    const oneTime = await this.oneTimeCadence();
+    if (!cadenceId || cadenceId === oneTime.cadenceId) {
+      // Honour an explicit one-time discount if the admin configured one.
+      const row = offered.find((r) => r.cadenceId === oneTime.cadenceId);
+      return row ? { ...oneTime, discountPercent: row.discountPercent } : oneTime;
+    }
+
+    const row = offered.find((r) => r.cadenceId === cadenceId);
+    if (!row) {
+      throw ApiError.badRequest("This service does not offer that payment frequency", {
+        code: "CADENCE_NOT_OFFERED",
+        cadenceId,
+      });
+    }
+    return {
+      cadenceId: row.cadenceId,
+      key: row.cadence.key,
+      label: row.cadence.label,
+      discountPercent: row.discountPercent,
+      isSubscription: row.cadence.interval !== CadenceInterval.NONE,
+    };
+  }
+
+  /** Memoised: the system one-time row is immutable for the process's life. */
+  private oneTime: PricingCadence | null = null;
+  private async oneTimeCadence(): Promise<PricingCadence> {
+    if (this.oneTime) return this.oneTime;
+    const row = await pricingRepository.findOneTimeCadence();
+    if (!row) {
+      throw new Error(
+        `The system "${ONE_TIME_CADENCE_KEY}" cadence is missing — every booking depends on it.`,
+      );
+    }
+    this.oneTime = {
+      cadenceId: row.id,
+      key: row.key,
+      label: row.label,
+      discountPercent: 0,
+      isSubscription: false,
+    };
+    return this.oneTime;
   }
 }
 

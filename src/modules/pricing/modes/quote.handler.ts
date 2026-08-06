@@ -1,6 +1,7 @@
 import { PricingMode } from "../../../enums";
 import { ApiError } from "../../../utils/api-error";
 import { computePrice } from "../engine/compute-price";
+import { applyRecurringDiscount } from "../engine/recurring-discount";
 import type { PricePreview, PricingModeContext, PricingModeHandler } from "./handler.types";
 
 const MIN_DESCRIPTION_LENGTH = 10;
@@ -19,8 +20,12 @@ class QuoteHandler implements PricingModeHandler {
     mode: this.mode,
     // Indicative only — requires_pro_confirmation below is what tells the client
     // this number is not a price.
-    displayed_price: computePrice(ctx.table, ctx.configuration),
+    displayed_price: applyRecurringDiscount(
+      computePrice(ctx.table, ctx.configuration),
+      ctx.cadence.discountPercent,
+    ),
     from_price: null,
+    cadence: ctx.cadence,
     is_from_band: false,
     requires_description: true,
     requires_pro_confirmation: true,
