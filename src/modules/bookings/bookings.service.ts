@@ -85,15 +85,43 @@ export class BookingsService {
           is_estimate: true,
         }
       : null;
-    const priced = await pricingService.recomputeForBooking(
+    const { price: priced, cadence } = await pricingService.recomputeForBooking(
       dto.service_type,
       {
         selections: dto.configuration.selections,
         quantity: dto.configuration.quantity,
         description: dto.configuration.description,
+        cadenceId: dto.cadence_id,
       },
       clientPrice,
     );
+
+    // ── The fork ────────────────────────────────────────────────────────────
+    // A recurring payment frequency is a SUBSCRIPTION, not a pay-at-booking
+    // booking: no Booking row, no payment window, no PaymentIntent. Stripe
+    // Checkout takes it from here and invoice.paid creates the first visit.
+    // Decided here at intake rather than at payment time, because by then a
+    // Booking would already exist in AWAITING_PAYMENT with the wrong lifecycle.
+    if (cadence.isSubscription) {
+      const { membershipsService } = await import("../memberships");
+      const sub = await membershipsService.subscribeFromConfiguration({
+        userId: customerId,
+        serviceId: service.id,
+        cadence,
+        selections: dto.configuration.selections,
+        quantity: dto.configuration.quantity ?? 1,
+        address: dto.address,
+        amount: priced?.total.amount ?? null,
+        currency: priced?.total.currency ?? service.currency,
+        taxRateBps: service.taxRateBps,
+      });
+      return {
+        outcome: "CHECKOUT",
+        checkout_url: sub.checkout_url,
+        membership_id: sub.membership_id,
+        cadence: { key: cadence.key, label: cadence.label, discountPercent: cadence.discountPercent },
+      };
+    }
 
     // Charge snapshot: the tax rate is captured AS-OF-BOOKING (catalog edits
     // never move an existing booking); for FROM the payable grand total is
@@ -123,6 +151,7 @@ export class BookingsService {
         description: dto.configuration.description ?? null,
         priced,
         tax: { taxRateBps, taxAmount, grandTotal },
+        cadence: { cadenceId: cadence.cadenceId, discountPercent: cadence.discountPercent },
         notes: dto.notes ?? null,
       });
 

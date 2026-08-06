@@ -68,10 +68,12 @@ beforeEach(() => {
 });
 
 describe("handleSubscriptionEvent — binding plan price + fulfilment", () => {
-  it("invoice.created: bills exactly the plan's binding price as the cycle's invoice item", async () => {
+  it("invoice.created: bills the signup snapshot as the cycle's invoice item", async () => {
     m.findMembershipBySubscription.mockResolvedValue({
       id: "mem1", serviceId: "svc1", userId: "u1", lastAmount: 12000, currency: "USD", configuration: config,
       plan: { id: "plan1", name: "Weekly Lawn Care", price: 15000 },
+      cadence: { id: "cad-wk", key: "weekly", label: "Weekly" },
+      amount: 15000, discountPercent: 0, taxRateBps: 0,
     });
 
     await membershipsService.handleSubscriptionEvent(
@@ -85,9 +87,37 @@ describe("handleSubscriptionEvent — binding plan price + fulfilment", () => {
     expect(m.updateMembership).toHaveBeenCalledWith("mem1", { lastAmount: 15000 });
   });
 
+  it("invoice.created: a plan-less subscription bills its own snapshot amount", async () => {
+    // Configuration-based: built on a service page from a configured job plus a
+    // recurring frequency, so there is no ServicePlan to read a price from.
+    m.findMembershipBySubscription.mockResolvedValue({
+      id: "mem2", serviceId: "svc1", userId: "u1", lastAmount: null, currency: "USD", configuration: config,
+      plan: null,
+      cadence: { id: "cad-wk", key: "weekly", label: "Weekly" },
+      service: { id: "svc1", name: "Lawn Care", taxRateBps: 725 },
+      amount: 12000, discountPercent: 20, taxRateBps: 725,
+    });
+
+    await membershipsService.handleSubscriptionEvent(
+      evt("invoice.created", { id: "in_2", customer: "cus_1", subscription: "sub_2" }),
+    );
+
+    expect(m.invoiceItemsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 12000, description: "Lawn Care — Weekly — service for this billing cycle" }),
+      expect.objectContaining({ idempotencyKey: "apex_invitem_in_2" }),
+    );
+    // Tax comes off the SNAPSHOT rate, not today's catalog: 12000 * 7.25%.
+    expect(m.invoiceItemsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 870 }),
+      expect.objectContaining({ idempotencyKey: "apex_invtax_in_2" }),
+    );
+    expect(m.updateMembership).toHaveBeenCalledWith("mem2", { lastAmount: 12870 });
+  });
+
   it("invoice.paid: records the payment, creates a fulfilment visit, and marks ACTIVE", async () => {
     m.findMembershipBySubscription.mockResolvedValue({
       id: "mem1", serviceId: "svc1", userId: "u1", lastAmount: 15000, configuration: config,
+      cadenceId: "cad-wk", discountPercent: 20,
     });
     m.paymentCreate.mockResolvedValue({});
     m.createSubscriptionVisit.mockResolvedValue({});
@@ -100,7 +130,11 @@ describe("handleSubscriptionEvent — binding plan price + fulfilment", () => {
       expect.objectContaining({ membershipId: "mem1", userId: "u1", amount: 15000, currency: "USD", status: "SUCCEEDED" }),
     );
     expect(m.createSubscriptionVisit).toHaveBeenCalledWith(
-      expect.objectContaining({ membershipId: "mem1", serviceId: "svc1", customerId: "u1", quantity: 1 }),
+      // The visit inherits the subscription's frequency and locked-in discount.
+      expect.objectContaining({
+        membershipId: "mem1", serviceId: "svc1", customerId: "u1", quantity: 1,
+        cadenceId: "cad-wk", discountPercent: 20,
+      }),
     );
     expect(m.updateMembership).toHaveBeenCalledWith("mem1", { status: "ACTIVE" });
   });

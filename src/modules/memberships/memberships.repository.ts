@@ -5,11 +5,14 @@ import { ConfigStatus } from "../../enums";
 // Plans ARE ServicePlan now (one entity); this repository only READS them —
 // plan lifecycle lives in the catalog module (/admin/catalog/plans).
 const planInclude = {
-  service: { select: { slug: true, name: true, currency: true } },
+  service: { select: { slug: true, name: true, currency: true, taxRateBps: true } },
   cadence: true,
 } as const;
 const membershipInclude = {
+  // plan is null for configuration-based subscriptions (service page + a
+  // recurring payment frequency, no package behind it).
   plan: { select: { id: true, name: true, price: true } },
+  cadence: { select: { id: true, key: true, label: true } },
   service: { select: { slug: true, name: true } },
 } as const;
 
@@ -45,13 +48,18 @@ export class MembershipsRepository {
   findMembershipById(id: string) {
     return prisma.membership.findUnique({ where: { id } });
   }
-  /** Includes plan + service tax rate — the cycle bills plan.price + tax. */
+  /**
+   * The cycle bills membership.amount (the signup snapshot) + tax. `plan` is
+   * null for configuration-based subscriptions, so `cadence` is what names the
+   * invoice line in that case.
+   */
   findMembershipBySubscription(stripeSubscriptionId: string) {
     return prisma.membership.findUnique({
       where: { stripeSubscriptionId },
       include: {
         plan: { select: { id: true, name: true, price: true } },
-        service: { select: { taxRateBps: true } },
+        cadence: { select: { id: true, key: true, label: true } },
+        service: { select: { id: true, name: true, taxRateBps: true } },
       },
     });
   }
@@ -61,6 +69,20 @@ export class MembershipsRepository {
       orderBy: { createdAt: "desc" },
       include: membershipInclude,
     });
+  }
+
+  // --- service recurring grid (Stripe anchor wiring for plan-less subs) ---
+  findServiceRecurring(serviceId: string, cadenceId: string) {
+    return prisma.serviceRecurring.findUnique({
+      where: { serviceId_cadenceId: { serviceId, cadenceId } },
+      include: {
+        cadence: true,
+        service: { select: { name: true, currency: true } },
+      },
+    });
+  }
+  updateServiceRecurring(id: string, data: Prisma.ServiceRecurringUncheckedUpdateInput) {
+    return prisma.serviceRecurring.update({ where: { id }, data });
   }
 }
 

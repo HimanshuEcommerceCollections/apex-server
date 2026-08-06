@@ -9,6 +9,11 @@ const m = vi.hoisted(() => ({
   record: vi.fn(),
   findByClientRequestId: vi.fn(),
   createBooked: vi.fn(),
+  subscribeFromConfiguration: vi.fn(),
+}));
+
+vi.mock("../memberships", () => ({
+  membershipsService: { subscribeFromConfiguration: m.subscribeFromConfiguration },
 }));
 
 vi.mock("../services", () => ({ servicesRepository: { findByIdOrSlug: m.findByIdOrSlug } }));
@@ -34,6 +39,10 @@ const baseDto = {
 
 const priced = { total: { amount: 16000, currency: "USD" }, line_items: [], pricing_version: "v1", is_estimate: true };
 
+/** Ordinary booking: the one-time cadence, no discount, not a subscription. */
+const ONE_TIME = { cadenceId: "cad-one", key: "one-time", label: "One-time", discountPercent: 0, isSubscription: false };
+const WEEKLY = { cadenceId: "cad-wk", key: "weekly", label: "Weekly", discountPercent: 20, isSubscription: true };
+
 function codeOf(p: Promise<unknown>) {
   return p.then(() => undefined).catch((e) => (e as { details?: { code?: string } }).details?.code);
 }
@@ -43,7 +52,7 @@ beforeEach(() => {
   m.findByIdOrSlug.mockResolvedValue({ id: "svc1", slug: "cleaning", status: "ACTIVE", pricingMode: "FROM" });
   m.findServiceWithConfig.mockResolvedValue({ configGroups: [] });
   m.findByClientRequestId.mockResolvedValue(null);
-  m.recomputeForBooking.mockResolvedValue(priced);
+  m.recomputeForBooking.mockResolvedValue({ price: priced, cadence: ONE_TIME });
   m.record.mockResolvedValue(undefined);
 });
 
@@ -56,6 +65,32 @@ describe("bookings.submit", () => {
     expect(r).toMatchObject({ outcome: "BOOKED", reference: "APX-2025-0001", booking_id: "b1" });
     expect(m.createBooked).toHaveBeenCalledOnce();
     expect(m.record).toHaveBeenCalled(); // demo-inbox
+  });
+
+  it("snapshots the cadence and its discount onto the booking", async () => {
+    m.isServiceAvailable.mockResolvedValue({ eligible: true });
+    m.createBooked.mockResolvedValue({ id: "b1", reference: "APX-2025-0001", status: "AWAITING_PAYMENT" });
+
+    await bookingsService.submit("cust1", baseDto as never);
+    expect(m.createBooked).toHaveBeenCalledWith(
+      expect.objectContaining({ cadence: { cadenceId: "cad-one", discountPercent: 0 } }),
+    );
+  });
+
+  it("CHECKOUT (no booking) when a recurring frequency is chosen", async () => {
+    m.isServiceAvailable.mockResolvedValue({ eligible: true });
+    m.recomputeForBooking.mockResolvedValue({ price: priced, cadence: WEEKLY });
+    m.subscribeFromConfiguration.mockResolvedValue({ checkout_url: "https://checkout/x", membership_id: "mem1" });
+
+    const r = await bookingsService.submit("cust1", { ...baseDto, cadence_id: "cad-wk" } as never);
+
+    expect(r).toMatchObject({ outcome: "CHECKOUT", checkout_url: "https://checkout/x", membership_id: "mem1" });
+    // The whole point of forking at intake: no booking, so no payment window
+    // and no PaymentIntent for something that bills on a schedule.
+    expect(m.createBooked).not.toHaveBeenCalled();
+    expect(m.subscribeFromConfiguration).toHaveBeenCalledWith(
+      expect.objectContaining({ serviceId: "svc1", amount: 16000, cadence: WEEKLY }),
+    );
   });
 
   it("WAITLISTED (no booking) when the ZIP is out of area", async () => {

@@ -15,6 +15,8 @@ const OPTION_BEARING = new Set<ConfigInputType>([
 export interface PricePreviewInputDto {
   selections: Record<string, string | number | boolean | string[]>;
   quantity?: number;
+  /** Chosen payment frequency — its discount is applied to the preview total. */
+  cadenceId?: string;
 }
 
 export class ServiceConfigService {
@@ -58,6 +60,7 @@ export class ServiceConfigService {
     return pricingService.preview(idOrSlug, {
       selections: input.selections,
       quantity: input.quantity,
+      cadenceId: input.cadenceId,
     });
   }
 

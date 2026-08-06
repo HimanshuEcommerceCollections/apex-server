@@ -1,5 +1,6 @@
 import { PricingMode } from "../../../enums";
 import { computePrice } from "../engine/compute-price";
+import { applyRecurringDiscount } from "../engine/recurring-discount";
 import type { DisplayedPrice } from "../engine/types";
 import type { PricePreview, PricingModeContext, PricingModeHandler } from "./handler.types";
 
@@ -15,12 +16,17 @@ class FromHandler implements PricingModeHandler {
 
   preview = (ctx: PricingModeContext): PricePreview => ({
     mode: this.mode,
-    displayed_price: computePrice(ctx.table, ctx.configuration),
-    // The listed minimum; a 0 base means the service lists no from-price.
+    displayed_price: applyRecurringDiscount(
+      computePrice(ctx.table, ctx.configuration),
+      ctx.cadence.discountPercent,
+    ),
+    // The listed minimum; a 0 base means the service lists no from-price. Left
+    // undiscounted: it is the "from $X" the site advertises, not this quote.
     from_price:
       ctx.service.basePrice > 0
         ? { amount: ctx.service.basePrice, currency: ctx.service.currency }
         : null,
+    cadence: ctx.cadence,
     is_from_band: true,
     requires_description: false,
     // Binding: the recomputed total is what gets charged at booking. No pro
@@ -29,7 +35,7 @@ class FromHandler implements PricingModeHandler {
   });
 
   recompute = (ctx: PricingModeContext): DisplayedPrice =>
-    computePrice(ctx.table, ctx.configuration);
+    applyRecurringDiscount(computePrice(ctx.table, ctx.configuration), ctx.cadence.discountPercent);
 }
 
 export const fromHandler = new FromHandler();

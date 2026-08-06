@@ -310,6 +310,10 @@ model Service {
 /// One-time / Weekly / Bi-weekly / Monthly … — the GLOBAL cadence vocabulary,
 /// admin-extendable. interval/intervalCount are the future Stripe subscription
 /// mapping (NONE = one-time). Per-service pricing lives on ServiceRecurring.
+/// Payment frequency — "how often the customer pays", NOT a package of benefits
+/// (that is ServicePlan). One-time is a first-class member of this set
+/// (interval NONE), so every agreement carries a cadence and nothing has to
+/// encode "one-time" as a null.
 model RecurringCadence {
   id            String          @id @default(uuid())
   key           String          @unique // "one-time", "weekly", "biweekly", "monthly", …
@@ -318,11 +322,16 @@ model RecurringCadence {
   intervalCount Int             @default(1)
   sortOrder     Int             @default(0)
   status        ConfigStatus    @default(ACTIVE)
+  /// Load-bearing row the app depends on by key (the one-time cadence every
+  /// booking points at). Admins cannot delete or deactivate it.
+  isSystem      Boolean         @default(false)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  services ServiceRecurring[]
-  plans    ServicePlan[]
+  services    ServiceRecurring[]
+  plans       ServicePlan[]
+  bookings    Booking[]
+  memberships Membership[]
 }
 
 /// A service's take on one global cadence: is it offered, and what % comes off
@@ -335,6 +344,11 @@ model ServiceRecurring {
   cadenceId       String
   discountPercent Int      @default(0) // 0-100, % off the configured pre-tax total
   isActive        Boolean  @default(false)
+  // Stripe wiring for CONFIGURATION-BASED subscriptions (no ServicePlan): a $0
+  // anchor price carrying this cadence's interval. The real amount is added per
+  // cycle as an invoice item, exactly as the plan path does.
+  stripeProductId String?
+  stripePriceId   String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -464,11 +478,22 @@ model Booking {
   // their lifecycle is coordinator-controlled.
   paymentDueAt        DateTime?
 
+  // Payment frequency this booking was made under. ALWAYS set — an ordinary
+  // booking points at the one-time cadence rather than leaving this null, so
+  // "is this a subscription?" is `cadence.interval != NONE` and never a null
+  // check. A non-one-time cadence implies membershipId is set: the subscription
+  // is what backs the discount.
+  cadenceId                String
+  /// The % actually taken off this booking, snapshotted at creation — a later
+  /// catalog edit must never move an existing booking's price.
+  recurringDiscountPercent Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   service         Service               @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   customer        User                  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cadence         RecurringCadence      @relation(fields: [cadenceId], references: [id], onDelete: Restrict)
   membership      Membership?           @relation(fields: [membershipId], references: [id], onDelete: SetNull)
   configuration   BookingConfiguration?
   quote           QuoteRequest?
@@ -482,6 +507,7 @@ model Booking {
   @@index([contactEmail])
   @@index([scheduledAt])
   @@index([createdAt])
+  @@index([cadenceId])
 }
 
 model BookingConfiguration {
@@ -914,10 +940,18 @@ model Payment {
 // 20260805*_merge_membership_plans): a plan's cadence comes from its
 // RecurringCadence and its price is the BINDING per-cycle amount.
 
+/// A live subscription. Two flavours, distinguished by planId:
+///   - PLAN-BACKED  (planId set)  — the customer bought a packaged ServicePlan.
+///   - CONFIGURATION-BASED (planId null) — the customer configured a job on a
+///     service page and chose a recurring payment frequency. There is no Plan;
+///     `amount` carries the binding per-cycle price.
+/// `cadenceId` is set either way (copied from the plan when there is one), so
+/// billing reads the interval from exactly one place with no conditional.
 model Membership {
   id                   String           @id @default(uuid())
   userId               String
-  planId               String
+  planId               String?
+  cadenceId            String
   serviceId            String
   status               MembershipStatus @default(INCOMPLETE)
   stripeSubscriptionId String           @unique
@@ -925,19 +959,26 @@ model Membership {
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean          @default(false)
   pausedUntil          DateTime?
-  lastAmount           Int? // last billed cycle amount (cents) = plan.price at billing time
+  lastAmount           Int? // last billed cycle amount (cents), incl. tax
   currency             String           @default("USD")
+  // Charge snapshot, taken at signup. Catalog edits must not silently re-price
+  // a live subscription — the same discipline bookings already follow.
+  amount               Int? // binding pre-tax per-cycle amount; null = read plan.price
+  discountPercent      Int              @default(0) // recurring discount applied to `amount`
+  taxRateBps           Int              @default(0) // tax rate as-of-signup
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
-  user     User        @relation(fields: [userId], references: [id], onDelete: Restrict)
-  plan     ServicePlan @relation(fields: [planId], references: [id], onDelete: Restrict)
-  service  Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  user     User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan     ServicePlan?     @relation(fields: [planId], references: [id], onDelete: Restrict)
+  cadence  RecurringCadence @relation(fields: [cadenceId], references: [id], onDelete: Restrict)
+  service  Service          @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   visits   Booking[]
   payments Payment[]
 
   @@index([userId])
   @@index([status])
+  @@index([cadenceId])
 }
 
 // ===========================================================================

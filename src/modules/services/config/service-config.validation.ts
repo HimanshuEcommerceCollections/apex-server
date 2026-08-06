@@ -9,4 +9,6 @@ export const configParamSchema = z.object({
 export const pricePreviewBodySchema = z.object({
   selections: selectionsSchema.optional().default({}),
   quantity: z.coerce.number().int().positive().optional(),
+  /** Chosen payment frequency — its discount is applied to the preview total. */
+  cadenceId: z.string().uuid().optional(),
 });
