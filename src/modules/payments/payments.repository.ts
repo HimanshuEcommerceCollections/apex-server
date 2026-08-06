@@ -12,6 +12,16 @@ export class PaymentsRepository {
   findByPaymentIntent(stripePaymentIntentId: string) {
     return prisma.payment.findUnique({ where: { stripePaymentIntentId } });
   }
+  /** Open (uncaptured) payments for a booking — voided before re-intent/cancel. */
+  findOpenForBooking(bookingId: string) {
+    return prisma.payment.findMany({
+      where: {
+        bookingId,
+        status: { in: [PaymentStatus.REQUIRES_PAYMENT, PaymentStatus.PROCESSING] },
+        stripePaymentIntentId: { not: null },
+      },
+    });
+  }
   update(id: string, data: Prisma.PaymentUncheckedUpdateInput) {
     return prisma.payment.update({ where: { id }, data });
   }

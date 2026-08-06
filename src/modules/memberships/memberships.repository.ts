@@ -45,11 +45,14 @@ export class MembershipsRepository {
   findMembershipById(id: string) {
     return prisma.membership.findUnique({ where: { id } });
   }
-  /** Includes the plan — its binding price is the cycle amount at billing time. */
+  /** Includes plan + service tax rate — the cycle bills plan.price + tax. */
   findMembershipBySubscription(stripeSubscriptionId: string) {
     return prisma.membership.findUnique({
       where: { stripeSubscriptionId },
-      include: { plan: { select: { id: true, name: true, price: true } } },
+      include: {
+        plan: { select: { id: true, name: true, price: true } },
+        service: { select: { taxRateBps: true } },
+      },
     });
   }
   listMembershipsByUser(userId: string) {

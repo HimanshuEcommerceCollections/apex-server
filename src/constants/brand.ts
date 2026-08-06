@@ -6,3 +6,6 @@ export const REFERENCE_PAD = 4;
 
 /** metadata.brand tag on every Apex Stripe object (07 §6.7 shared-account isolation). */
 export const STRIPE_BRAND_TAG = "APEX";
+
+/** Unpaid FROM bookings auto-cancel this many hours after entering AWAITING_PAYMENT. */
+export const PAYMENT_WINDOW_HOURS = 24;

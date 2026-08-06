@@ -95,6 +95,14 @@ export class BookingsService {
       clientPrice,
     );
 
+    // Charge snapshot: the tax rate is captured AS-OF-BOOKING (catalog edits
+    // never move an existing booking); for FROM the payable grand total is
+    // fixed here too. QUOTE gets its taxAmount/grandTotal at intent time from
+    // quotedAmount × this stored rate.
+    const taxRateBps = service.taxRateBps;
+    const taxAmount = priced ? Math.round((priced.total.amount * taxRateBps) / 10000) : null;
+    const grandTotal = priced ? priced.total.amount + taxAmount! : null;
+
     // Transactional persistence.
     try {
       const booking = await bookingsRepository.createBooked({
@@ -114,6 +122,7 @@ export class BookingsService {
         quantity: dto.configuration.quantity ?? 1,
         description: dto.configuration.description ?? null,
         priced,
+        tax: { taxRateBps, taxAmount, grandTotal },
         notes: dto.notes ?? null,
       });
 
@@ -138,15 +147,51 @@ export class BookingsService {
 
   async listMine(customerId: string): Promise<MyBookingSummary[]> {
     const rows = await bookingsRepository.findManyForCustomer(customerId);
-    return rows.map((b) => ({
-      reference: b.reference,
-      service: b.service ? { slug: b.service.slug, name: b.service.name } : null,
-      status: b.status,
-      priceTotal: b.configuration?.priceTotal ?? null,
-      currency: b.configuration?.currency ?? "USD",
-      scheduledAt: b.scheduledAt ? b.scheduledAt.toISOString() : null,
-      createdAt: b.createdAt.toISOString(),
-    }));
+    return rows.map((b) => {
+      const cfg = b.configuration;
+      const quotedAmount = b.quote?.quotedAmount ?? null;
+      // QUOTE amounts derive from the coordinator's number × the STORED rate.
+      const taxAmount =
+        cfg?.taxAmount ??
+        (quotedAmount != null ? Math.round((quotedAmount * (cfg?.taxRateBps ?? 0)) / 10000) : null);
+      const grandTotal = cfg?.grandTotal ?? (quotedAmount != null ? quotedAmount + (taxAmount ?? 0) : null);
+      const canPay = b.quoteRequest
+        ? quotedAmount != null && (b.status === "PENDING" || b.status === "AWAITING_PAYMENT")
+        : b.status === "AWAITING_PAYMENT";
+      return {
+        reference: b.reference,
+        service: b.service ? { slug: b.service.slug, name: b.service.name } : null,
+        status: b.status,
+        quoteRequest: b.quoteRequest,
+        priceTotal: cfg?.priceTotal ?? quotedAmount,
+        taxAmount,
+        grandTotal,
+        quotedAmount,
+        currency: cfg?.currency ?? "USD",
+        canPay,
+        // Customer cancel is for unpaid FROM bookings only; QUOTE is coordinator-controlled.
+        canCancel: !b.quoteRequest && b.status === "AWAITING_PAYMENT",
+        paymentDueAt: b.paymentDueAt ? b.paymentDueAt.toISOString() : null,
+        scheduledAt: b.scheduledAt ? b.scheduledAt.toISOString() : null,
+        createdAt: b.createdAt.toISOString(),
+      };
+    });
+  }
+
+  /** Customer-initiated cancel: unpaid FROM bookings only; also voids any open PaymentIntent. */
+  async cancelMine(customerId: string, reference: string): Promise<{ canceled: boolean }> {
+    const b = await bookingsRepository.findForCustomerByReference(reference, customerId);
+    if (!b) throw ApiError.notFound("Booking not found", { code: "BOOKING_NOT_FOUND" });
+    if (b.quoteRequest) {
+      throw ApiError.badRequest("Quote bookings are managed by your coordinator", { code: "QUOTE_NOT_CANCELABLE" });
+    }
+    if (b.status !== "AWAITING_PAYMENT") {
+      throw ApiError.badRequest("Only unpaid bookings can be cancelled", { code: "BOOKING_NOT_CANCELABLE" });
+    }
+    const { paymentsService } = await import("../payments");
+    await paymentsService.voidOpenIntents(b.id);
+    await bookingsRepository.setStatusById(b.id, "CANCELLED" as never);
+    return { canceled: true };
   }
 
   async getMine(customerId: string, reference: string) {

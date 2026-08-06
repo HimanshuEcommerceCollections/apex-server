@@ -1,6 +1,6 @@
 import { Prisma, BookingSource, BookingStatus, Brand, PricingMode, QuoteSource } from "@prisma/client";
 import { prisma } from "../../db/client";
-import { BRAND_CODE } from "../../constants";
+import { BRAND_CODE, PAYMENT_WINDOW_HOURS } from "../../constants";
 import { withTxRetry } from "../../utils/tx-retry";
 import { nextBookingReference } from "./booking-reference";
 import type { BookedCreateInput } from "./bookings.types";
@@ -21,7 +21,10 @@ export class BookingsRepository {
               clientRequestId: input.clientRequestId ?? null,
               serviceId: input.serviceId,
               customerId: input.customerId,
-              status: BookingStatus.PENDING,
+              // FROM is pay-at-booking: born AWAITING_PAYMENT with an auto-cancel
+              // deadline. QUOTE stays PENDING — coordinator-controlled lifecycle.
+              status: isQuote ? BookingStatus.PENDING : BookingStatus.AWAITING_PAYMENT,
+              paymentDueAt: isQuote ? null : new Date(Date.now() + PAYMENT_WINDOW_HOURS * 3600_000),
               quoteRequest: isQuote,
               brand: Brand.APEX,
               source: BookingSource.WEB,
@@ -47,6 +50,11 @@ export class BookingsRepository {
                   pricingVersion: input.priced?.pricing_version ?? null,
                   currency: input.priced?.total.currency ?? "USD",
                   isEstimate: true,
+                  // Charge snapshot (rate as-of-booking; QUOTE amounts stay null
+                  // until the intent computes them from quotedAmount).
+                  taxRateBps: input.tax.taxRateBps,
+                  taxAmount: input.tax.taxAmount,
+                  grandTotal: input.tax.grandTotal,
                 },
               },
               ...(isQuote
@@ -80,7 +88,13 @@ export class BookingsRepository {
     return prisma.booking.findMany({
       where: { customerId },
       orderBy: { createdAt: "desc" },
-      include: { service: serviceSelect, configuration: { select: { priceTotal: true, currency: true } } },
+      include: {
+        service: serviceSelect,
+        configuration: {
+          select: { priceTotal: true, currency: true, taxRateBps: true, taxAmount: true, grandTotal: true },
+        },
+        quote: { select: { quotedAmount: true } },
+      },
     });
   }
 
@@ -135,6 +149,18 @@ export class BookingsRepository {
     return prisma.booking.update({ where: { id }, data: { status } });
   }
 
+  /** Unpaid FROM bookings past their payment deadline (the cron sweep's input). */
+  findAbandonedAwaitingPayment(now: Date) {
+    return prisma.booking.findMany({
+      where: {
+        status: BookingStatus.AWAITING_PAYMENT,
+        quoteRequest: false,
+        paymentDueAt: { lt: now },
+      },
+      select: { id: true, reference: true },
+    });
+  }
+
   /** Auto-created fulfilment visit for a membership cycle (source SUBSCRIPTION). */
   createSubscriptionVisit(input: {
     customerId: string;
@@ -156,7 +182,7 @@ export class BookingsRepository {
             serviceId: input.serviceId,
             customerId: input.customerId,
             membershipId: input.membershipId,
-            status: BookingStatus.PENDING,
+            status: BookingStatus.PAID, // paid by the membership invoice that created it
             source: BookingSource.SUBSCRIPTION,
             contactName: input.contact.name,
             contactEmail: input.contact.email,

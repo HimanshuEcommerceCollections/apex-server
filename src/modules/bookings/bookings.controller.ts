@@ -17,6 +17,10 @@ export class BookingsController {
   getMine = async (req: Request, res: Response) => {
     sendSuccess(res, await bookingsService.getMine(req.user!.id, req.params.reference));
   };
+
+  cancelMine = async (req: Request, res: Response) => {
+    sendSuccess(res, await bookingsService.cancelMine(req.user!.id, req.params.reference), "Booking cancelled");
+  };
 }
 
 export const bookingsController = new BookingsController();
