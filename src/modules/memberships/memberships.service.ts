@@ -91,7 +91,7 @@ export class MembershipsService {
       line_items: [{ price: plan.stripePriceId!, quantity: 1 }], // non-null: guarded above
       subscription_data: { metadata: { ...brandMetadata(), membershipId: membership.id } },
       metadata: { ...brandMetadata(), membershipId: membership.id },
-      success_url: `${env.CLIENT_BASE_URL}/account?membership=success`,
+      success_url: `${env.CLIENT_BASE_URL}/my-bookings?membership=success`,
       cancel_url: `${env.CLIENT_BASE_URL}/membership-plans?canceled=1`,
     });
     return { checkout_url: session.url };
@@ -147,10 +147,13 @@ export class MembershipsService {
         if (!sub) return;
         const membership = await membershipsRepository.findMembershipBySubscription(sub);
         if (!membership) return;
-        // The plan's price is BINDING — every cycle invoices exactly this. The
-        // old per-cycle recompute from the stored configuration is gone.
+        // The plan's price is BINDING — every cycle invoices exactly this, plus
+        // the service's tax as its own line (rate read at billing time).
         const amount = membership.plan.price;
-        await getStripe().invoiceItems.create(
+        const taxBps = membership.service?.taxRateBps ?? 0;
+        const tax = Math.round((amount * taxBps) / 10000);
+        const stripe = getStripe();
+        await stripe.invoiceItems.create(
           {
             customer: inv.customer as string,
             invoice: inv.id,
@@ -160,10 +163,23 @@ export class MembershipsService {
           },
           { idempotencyKey: idemKey(`invitem_${inv.id}`) },
         );
-        if (membership.lastAmount !== amount) {
-          logger.info(`[membership] price change ${membership.id}: ${membership.lastAmount ?? "—"} -> ${amount} (notify member)`);
+        if (tax > 0) {
+          await stripe.invoiceItems.create(
+            {
+              customer: inv.customer as string,
+              invoice: inv.id,
+              amount: tax,
+              currency: membership.currency.toLowerCase(),
+              description: `Sales tax (${(taxBps / 100).toFixed(2).replace(/\.?0+$/, "")}%)`,
+            },
+            { idempotencyKey: idemKey(`invtax_${inv.id}`) },
+          );
         }
-        await membershipsRepository.updateMembership(membership.id, { lastAmount: amount });
+        const cycleTotal = amount + tax;
+        if (membership.lastAmount !== cycleTotal) {
+          logger.info(`[membership] price change ${membership.id}: ${membership.lastAmount ?? "—"} -> ${cycleTotal} (notify member)`);
+        }
+        await membershipsRepository.updateMembership(membership.id, { lastAmount: cycleTotal });
         break;
       }
       case "invoice.paid": {

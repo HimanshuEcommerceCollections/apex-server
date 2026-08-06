@@ -27,3 +27,9 @@ meBookingsRouter.get(
   validate({ params: bookingReferenceParamSchema }),
   asyncHandler(bookingsController.getMine),
 );
+// Customer cancel — unpaid FROM bookings only (voids any open PaymentIntent).
+meBookingsRouter.post(
+  "/:reference/cancel",
+  validate({ params: bookingReferenceParamSchema }),
+  asyncHandler(bookingsController.cancelMine),
+);

@@ -6,6 +6,9 @@ import {
 } from "./catalog.repository";
 import { auditService } from "../audit";
 import { ApiError } from "../../utils/api-error";
+import { env } from "../../config/env";
+import { logger } from "../../utils/logger";
+import { getStripe, brandMetadata } from "../payments/stripe.client";
 import { pingClientRevalidate } from "./catalog.revalidate";
 import type { CadenceView, PlanView, ServiceEditView } from "./catalog.types";
 
@@ -256,6 +259,11 @@ export class CatalogService {
     if (!svc) throw ApiError.notFound("Service not found", { code: "SERVICE_NOT_FOUND" });
     const cadence = await catalogRepository.findCadence(dto.cadenceId);
     if (!cadence) throw ApiError.notFound("Cadence not found", { code: "CADENCE_NOT_FOUND" });
+    if (cadence.interval === "NONE") {
+      throw ApiError.badRequest("Plans are recurring — pick a recurring cadence", {
+        code: "PLAN_CADENCE_NOT_RECURRING",
+      });
+    }
 
     const created = await catalogRepository.createPlan({
       serviceId: dto.serviceId,
@@ -267,10 +275,11 @@ export class CatalogService {
       featured: dto.featured ?? false,
       sortOrder: dto.sortOrder ?? 0,
     });
+    const wired = await this.ensureStripeWiring(created.id);
 
     await this.audit(actor, "catalog.plan.create", created.id, null, { name: created.name, price: created.price });
     this.revalidate(svc.slug);
-    return this.serializePlan(created);
+    return this.serializePlan(wired ?? created);
   }
 
   async patchPlan(id: string, dto: Prisma.ServicePlanUncheckedUpdateInput, actor: Actor): Promise<PlanView> {
@@ -279,10 +288,19 @@ export class CatalogService {
     if (typeof dto.cadenceId === "string") {
       const cadence = await catalogRepository.findCadence(dto.cadenceId);
       if (!cadence) throw ApiError.notFound("Cadence not found", { code: "CADENCE_NOT_FOUND" });
+      if (cadence.interval === "NONE") {
+        throw ApiError.badRequest("Plans are recurring — pick a recurring cadence", {
+          code: "PLAN_CADENCE_NOT_RECURRING",
+        });
+      }
+      // The $0 anchor price encodes the billing interval: a cadence change
+      // invalidates it (a fresh one is provisioned below).
+      if (dto.cadenceId !== plan.cadenceId) dto.stripePriceId = null;
     }
 
     const before = { name: plan.name, price: plan.price, status: plan.status };
-    const updated = await catalogRepository.updatePlan(id, dto);
+    let updated = await catalogRepository.updatePlan(id, dto);
+    updated = (await this.ensureStripeWiring(id)) ?? updated;
 
     await this.audit(actor, "catalog.plan.update", id, before, {
       name: updated.name,
@@ -291,6 +309,50 @@ export class CatalogService {
     });
     this.revalidate(updated.service.slug);
     return this.serializePlan(updated);
+  }
+
+  /**
+   * Provision the plan's Stripe objects when missing: a product plus a $0
+   * ANCHOR price carrying the billing interval — the real amount is added per
+   * cycle as an invoice item (plan.price + tax), so plan price edits never
+   * need a Stripe round-trip. No-ops gracefully when Stripe isn't configured
+   * (the plan stays display-only until subscribe, which guards on
+   * stripePriceId).
+   */
+  private async ensureStripeWiring(planId: string) {
+    if (!env.STRIPE_SECRET_KEY) return null;
+    const plan = await catalogRepository.listPlans().then((all) => all.find((p) => p.id === planId));
+    if (!plan || plan.status !== "ACTIVE" || plan.stripePriceId) return null;
+
+    const cadence = await catalogRepository.findCadence(plan.cadenceId);
+    if (!cadence || cadence.interval === "NONE") return null;
+
+    try {
+      const stripe = getStripe();
+      let productId = plan.stripeProductId;
+      if (!productId) {
+        const product = await stripe.products.create({
+          name: `${plan.service.name} — ${plan.name}`,
+          metadata: { ...brandMetadata(), planId: plan.id },
+        });
+        productId = product.id;
+      }
+      const price = await stripe.prices.create({
+        product: productId,
+        unit_amount: 0, // $0 cadence anchor; the binding amount bills per cycle as an invoice item
+        currency: "usd",
+        recurring: {
+          interval: cadence.interval.toLowerCase() as "week" | "month",
+          interval_count: cadence.intervalCount,
+        },
+        metadata: brandMetadata(),
+      });
+      return await catalogRepository.updatePlan(plan.id, { stripeProductId: productId, stripePriceId: price.id });
+    } catch (err) {
+      // Never block plan management on Stripe availability; subscribe stays gated.
+      logger.error(`[catalog] Stripe wiring failed for plan ${planId}: ${String(err)}`);
+      return null;
+    }
   }
 
   // ── internals ────────────────────────────────────────────────────────────

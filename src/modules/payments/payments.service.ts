@@ -12,17 +12,35 @@ import { brandMetadata, getStripe, idemKey, isApexObject, webhookSecret } from "
 import type { PaymentIntentResult, RefundResult, WebhookResult } from "./payments.types";
 
 export class PaymentsService {
-  /** Create/refresh a PaymentIntent for a booking; amount is the immutable snapshot / quoted price. */
+  /**
+   * Create/refresh a PaymentIntent for a booking. SNAPSHOT DISCIPLINE: the
+   * charged amount always comes from stored data — FROM charges the booking's
+   * grandTotal (priceTotal + tax captured at booking time); QUOTE charges the
+   * coordinator's quotedAmount + tax at the RATE STORED at booking time.
+   * Catalog edits never move an existing booking's charge.
+   */
   async createIntentForBooking(userId: string, reference: string): Promise<PaymentIntentResult> {
     const booking = await bookingsRepository.findForCustomerByReference(reference, userId);
     if (!booking) throw ApiError.notFound("Booking not found", { code: "BOOKING_NOT_FOUND" });
+    if (booking.status === BookingStatus.PAID || booking.status === BookingStatus.CANCELLED) {
+      throw ApiError.badRequest("This booking can't be paid", { code: "BOOKING_NOT_PAYABLE", status: booking.status });
+    }
 
-    // FROM charges the recompute snapshot; QUOTE charges the coordinator's quotedAmount.
-    const amount = booking.configuration?.priceTotal ?? booking.quote?.quotedAmount ?? null;
-    if (amount == null) {
+    const cfg = booking.configuration;
+    const subtotal = cfg?.priceTotal ?? booking.quote?.quotedAmount ?? null;
+    if (subtotal == null) {
       throw ApiError.badRequest("This booking isn't priced yet", { code: "BOOKING_NOT_PRICED" });
     }
-    const currency = booking.configuration?.currency ?? "USD";
+    const taxAmount =
+      cfg?.priceTotal != null && cfg.taxAmount != null
+        ? cfg.taxAmount
+        : Math.round((subtotal * (cfg?.taxRateBps ?? 0)) / 10000);
+    const amount = cfg?.priceTotal != null && cfg.grandTotal != null ? cfg.grandTotal : subtotal + taxAmount;
+    const currency = cfg?.currency ?? "USD";
+
+    // "Complete payment" must never leave a stale payable secret behind: void
+    // any open intent for this booking before minting a fresh one.
+    await this.voidOpenIntents(booking.id);
 
     const stripe = getStripe();
     const idempotencyKey = idemKey(randomToken(16));
@@ -30,6 +48,7 @@ export class PaymentsService {
       bookingId: booking.id,
       userId,
       amount,
+      taxAmount,
       currency,
       status: PaymentStatus.REQUIRES_PAYMENT,
       idempotencyKey,
@@ -57,9 +76,45 @@ export class PaymentsService {
       payment_intent_id: pi.id,
       client_secret: pi.client_secret,
       amount,
+      subtotal,
+      tax_amount: taxAmount,
       currency,
       publishable_key: env.STRIPE_PUBLISHABLE_KEY ?? null,
     };
+  }
+
+  /**
+   * Cancel every open (uncaptured) PaymentIntent for a booking — used before
+   * re-intent, on customer cancel, and by the abandoned-payment sweep. Swallows
+   * per-intent Stripe errors: an intent that races to succeed is reconciled by
+   * its own webhook, never blocked here.
+   */
+  async voidOpenIntents(bookingId: string): Promise<void> {
+    const open = await paymentsRepository.findOpenForBooking(bookingId);
+    if (!open.length) return;
+    const stripe = getStripe();
+    for (const p of open) {
+      try {
+        await stripe.paymentIntents.cancel(p.stripePaymentIntentId!);
+      } catch {
+        /* already succeeded/canceled — the webhook owns that state */
+      }
+      await paymentsRepository.update(p.id, { status: PaymentStatus.CANCELED });
+    }
+  }
+
+  /**
+   * Cron sweep: auto-cancel unpaid FROM bookings past their payment deadline
+   * (QUOTE is exempt — coordinator-controlled). Returns the count cancelled.
+   */
+  async sweepAbandoned(): Promise<{ cancelled: number }> {
+    const stale = await bookingsRepository.findAbandonedAwaitingPayment(new Date());
+    for (const b of stale) {
+      await this.voidOpenIntents(b.id);
+      await bookingsRepository.setStatusById(b.id, BookingStatus.CANCELLED);
+      logger.info(`[payments] auto-cancelled unpaid booking ${b.reference} (payment window expired)`);
+    }
+    return { cancelled: stale.length };
   }
 
   /**

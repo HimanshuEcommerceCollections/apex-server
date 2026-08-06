@@ -37,6 +37,8 @@ const EnvSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+  /** Bearer token Vercel Cron presents to the abandoned-payment sweep endpoint. */
+  CRON_SECRET: z.string().optional(),
 
   // Email (Phase 2+) — optional until real email ships.
   EMAIL_PROVIDER: z.enum(["resend", "smtp"]).default("smtp"),

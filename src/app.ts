@@ -39,6 +39,20 @@ export function createApp() {
   //    rate limiter). Signature-verified + brand-gated inside the handler (07 §6).
   app.post("/webhooks/stripe", express.raw({ type: "application/json" }), asyncHandler(stripeWebhookHandler));
 
+  // 3b. Vercel Cron: auto-cancel unpaid FROM bookings past their payment window.
+  //     Vercel invokes with `Authorization: Bearer ${CRON_SECRET}` (GET).
+  app.get(
+    "/webhooks/cron/sweep-abandoned",
+    asyncHandler(async (req, res) => {
+      if (!env.CRON_SECRET || req.get("authorization") !== `Bearer ${env.CRON_SECRET}`) {
+        res.status(401).json({ success: false, message: "Unauthorized" });
+        return;
+      }
+      const { paymentsService } = await import("./modules/payments");
+      res.json({ success: true, data: await paymentsService.sweepAbandoned() });
+    }),
+  );
+
   // 4. Body parsing + cookies (refresh-token cookie — 07 §3)
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: true }));

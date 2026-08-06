@@ -459,6 +459,10 @@ model Booking {
   notes               String?
   schedulePreferences Json?
   scheduledAt         DateTime? // 07: coordinator-set service datetime; drives the 24h refund window + pro queue
+  // Auto-cancel deadline for unpaid FROM bookings (set when the booking enters
+  // AWAITING_PAYMENT; the cron sweep cancels past-due ones). NULL for QUOTE —
+  // their lifecycle is coordinator-controlled.
+  paymentDueAt        DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -493,6 +497,13 @@ model BookingConfiguration {
   pricingVersion String?
   currency       String   @default("USD")
   isEstimate     Boolean  @default(true)
+  // Charge snapshot: the tax rate as-of-booking (catalog edits never move an
+  // existing booking), the tax on priceTotal, and the payable grand total.
+  // For QUOTE, taxAmount/grandTotal stay NULL until the intent computes them
+  // from quotedAmount × the STORED rate.
+  taxRateBps     Int      @default(0)
+  taxAmount      Int?
+  grandTotal     Int? // priceTotal + taxAmount; what the PaymentIntent charges
   createdAt      DateTime @default(now())
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -879,6 +890,7 @@ model Payment {
   membershipId          String?
   stripeInvoiceId       String?
   amount                Int // cents
+  taxAmount             Int           @default(0) // cents; the tax portion of `amount` (reporting)
   currency              String        @default("USD")
   status                PaymentStatus @default(REQUIRES_PAYMENT)
   stripePaymentIntentId String?       @unique
